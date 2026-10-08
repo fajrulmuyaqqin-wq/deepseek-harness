@@ -1,0 +1,30 @@
+{
+  "models": {
+    "int8": {
+      "encoder": {
+        "name": "tiny-encoder.int8.onnx",
+        "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/tiny-encoder.int8.onnx",
+        "bytes": 12937772,
+        "sha256": "d24fb083ae3b1041fc24e97971d60e280c9342201fbb67b0ab428a8b4a51a434"
+      },
+      "decoder": {
+        "name": "tiny-decoder.int8.onnx",
+        "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/tiny-decoder.int8.onnx",
+        "bytes": 89855401,
+        "sha256": "d2fece8dd42771f1df975c6c0445770d0c292bf7547c2cae04a6c0cc57540925"
+      }
+    }
+  },
+  "tokens": {
+    "name": "tiny-tokens.txt",
+    "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/tiny-tokens.txt",
+    "bytes": 816730,
+    "sha256": "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126"
+  },
+  "vad": {
+    "name": "silero_vad.onnx",
+    "url": "https://huggingface.co/csukuangfj/vad/resolve/fba88cd2e921609e7675c3aaf51e0b9b295da4bc/silero_vad.onnx",
+    "bytes": 1807522,
+    "sha256": "a35ebf52fd3ce5f1469b2a36158dba761bc47b973ea3382b3186ca15b1f5af28"
+  }
+}

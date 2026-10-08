@@ -139,7 +139,7 @@ export function VoicePreparation({ useSpeechReadiness, ...props }: Pick<InjectFa
   }
   const selected = catalog?.providers.find(provider => provider.id === catalog.selection.providerId)
   const languageNames: Readonly<Record<string, string>> = {
-    auto: props.t('auto'), zh: props.t('zh'), en: props.t('en'), yue: props.t('yue'), ja: props.t('ja'), ko: props.t('ko'),
+    auto: props.t('auto'), id: props.t('id'), zh: props.t('zh'), en: props.t('en'), yue: props.t('yue'), ja: props.t('ja'), ko: props.t('ko'),
   }
   return <div>
     {catalog && <div className={css.preferences}>

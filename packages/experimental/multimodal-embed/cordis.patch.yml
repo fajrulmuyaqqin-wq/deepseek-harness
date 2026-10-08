@@ -1,0 +1,9 @@
+- insert:
+    - id: multimodal-embed
+      name: '@deepseek-ai/dsh-experimental-multimodal-embed'
+      config:
+        maxCpuThreads: 2
+        watchdogTimeoutMs: 3000
+        toolRouting:
+          enabled: true
+          similarityThreshold: 0.60

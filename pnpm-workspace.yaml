@@ -52,7 +52,7 @@ allowBuilds:
   # Windows through NSIS, so that mutation is not part of our build.
   electron-winstaller: false
   # Store-index rewriting only needs msgpackr's portable JavaScript codec.
-  msgpackr-extract: false
+  onnxruntime-node: true
 
 minimumReleaseAgeExclude:
   # Office engines and their API are qualified and released together by the kit repository.
