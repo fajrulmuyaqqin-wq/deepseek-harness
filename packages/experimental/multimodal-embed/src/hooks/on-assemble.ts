@@ -95,10 +95,6 @@ export function registerToolRouterHook(
     },
   }
 
-  if (!config.toolRouting.enabled) {
-    return activator
-  }
-
   ctx.on('system-prompt/assemble', async (
     assembly: PromptAssembly,
     context: AssembleContext,
@@ -227,6 +223,11 @@ export function registerToolRouterHook(
       }
 
       const sessionState = sessionId ? getOrCreateSessionState(sessionId) : undefined
+
+      if (!config.toolRouting.enabled) {
+        // Tool routing / dynamic pruning is disabled; preserve all registered tools
+        return await next()
+      }
 
       if (allTools.length <= config.toolRouting.maxDynamicTools + coreToolsSet.size) {
         // Tool count already small, no pruning needed
