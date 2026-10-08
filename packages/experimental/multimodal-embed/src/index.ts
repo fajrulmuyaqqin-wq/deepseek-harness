@@ -11,6 +11,7 @@ import type { MultimodalEmbedConfig } from './config.ts'
 import { MultimodalEmbeddingService } from './service.ts'
 import { createSearchMemoryTool } from './tools/search-memory.ts'
 import { createSaveLessonTool } from './tools/save-lesson.ts'
+import { createSaveRuleTool } from './tools/save-rule.ts'
 import { createInspectMultimodalTool } from './tools/inspect-multimodal.ts'
 import { createActivateToolTool } from './tools/activate-tool.ts'
 import { registerToolRouterHook } from './hooks/on-assemble.ts'
@@ -20,6 +21,8 @@ export * from './types.ts'
 export * from './config.ts'
 export * from './service.ts'
 export * from './tools/activate-tool.ts'
+export * from './tools/save-rule.ts'
+export * from './tools/save-lesson.ts'
 
 export const name = 'multimodal-embed'
 export const inject = ['tools', 'systemPrompt']
@@ -35,12 +38,14 @@ export function apply(ctx: Context, config: MultimodalEmbedConfig): void {
   ctx.effect(() => {
     const unregisterSearch = ctx.tools.register(createSearchMemoryTool(service))
     const unregisterSave = ctx.tools.register(createSaveLessonTool(service))
+    const unregisterSaveRule = ctx.tools.register(createSaveRuleTool(service))
     const unregisterInspect = ctx.tools.register(createInspectMultimodalTool(service))
     const unregisterActivate = ctx.tools.register(createActivateToolTool(activator))
 
     return () => {
       unregisterSearch()
       unregisterSave()
+      unregisterSaveRule()
       unregisterInspect()
       unregisterActivate()
     }

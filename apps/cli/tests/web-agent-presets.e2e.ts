@@ -261,6 +261,7 @@ describe('the shipped Web composition', () => {
       expect(names).toContain('bash')
       expect(names).toContain('search_memory')
       expect(names).toContain('save_lesson')
+      expect(names).toContain('save_rule')
       expect(names).toContain('inspect_multimodal')
       expect(names).toContain('activate_tool')
       const compositions = ctx.agentPresets.inspectCompositions(handle.agent.ctx)

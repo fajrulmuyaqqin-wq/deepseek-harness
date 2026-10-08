@@ -36,6 +36,7 @@ export function registerToolRouterHook(
   // Ensure essential tools are always part of core tools
   coreToolsSet.add('search_memory')
   coreToolsSet.add('save_lesson')
+  coreToolsSet.add('save_rule')
   coreToolsSet.add('activate_tool')
 
   // Cache for tool vector representations
@@ -112,13 +113,34 @@ export function registerToolRouterHook(
       // Extract turn intent from variables or context
       const intentText = assembly.variables.userPrompt ?? assembly.variables.topic ?? ''
 
-      // 1. Passive RAG: Auto-inject relevant memories if confidence > recall.similarityThreshold
+      // 0. Active Project Rules & Guidelines (Directives Domain)
+      // Retrieve operational project rules and inject at highest priority (pinned at top)
+      try {
+        const activeRules = await service.getEntriesByCategory('rule', 10)
+        if (activeRules.length > 0) {
+          const rulesText = [
+            '## Active Project Rules & Guidelines',
+            ...activeRules.map((r, idx) => `${idx + 1}. ${r.content}`),
+          ].join('\n')
+
+          assembly.sections.unshift({
+            name: 'active-project-rules',
+            text: rulesText,
+            interpolate: false,
+          })
+        }
+      } catch (ruleErr: unknown) {
+        const msg = ruleErr instanceof Error ? ruleErr.message : String(ruleErr)
+        ctx.logger.warn(`multimodal active rules retrieval failed: ${msg}`)
+      }
+
+      // 1. Passive RAG (Knowledge Domain): Auto-inject relevant memories if confidence > recall.similarityThreshold
       if (config.recall.enabled && intentText.trim().length > 0) {
         try {
           const intentVec = await service.embedText(intentText)
           const recallThreshold = config.recall.similarityThreshold
           const maxMemories = config.recall.maxItems
-          const eligibleCategories = config.recall.categories as MemoryCategory[]
+          const eligibleCategories = (config.recall.categories as MemoryCategory[]).filter(c => c !== 'rule')
           const memories = await service.searchSimilar(intentVec, maxMemories, recallThreshold, eligibleCategories)
 
           if (memories.length > 0) {

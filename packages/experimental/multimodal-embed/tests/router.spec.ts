@@ -9,6 +9,7 @@ import type { PromptAssembly, AssembleContext } from '@deepseek-ai/dsh-system-pr
 import { MultimodalEmbeddingService } from '../src/service.ts'
 import { Config } from '../src/config.ts'
 import { registerToolRouterHook } from '../src/hooks/on-assemble.ts'
+import { createSaveRuleTool, type SaveRuleResult } from '../src/tools/save-rule.ts'
 
 describe('Turn-Boundary Tool-RAG & Passive Memory Recall (on-assemble)', () => {
   it('auto-injects high confidence long-term memories (> 0.65) into assembly sections', async () => {
@@ -386,5 +387,66 @@ describe('Turn-Boundary Tool-RAG & Passive Memory Recall (on-assemble)', () => {
       unlinkSync(tempImagePath)
       service.teardown()
     }
+  })
+
+  it('saves operational rule via save_rule tool and retrieves it via getEntriesByCategory', async () => {
+    const ctx = new Context()
+    const service = new MultimodalEmbeddingService(ctx, Config({}))
+    ctx.set('multimodalEmbed', service)
+
+    const saveRuleTool = createSaveRuleTool(service)
+    const result = (await saveRuleTool.execute(
+      { rule: 'Target git branch selalu development, jangan push ke master', scope: 'workflow' },
+      { signal: new AbortController().signal } as never,
+    )) as SaveRuleResult
+
+    expect(result.ok).toBe(true)
+    expect(result.rule).toBe('Target git branch selalu development, jangan push ke master')
+    expect(result.id).toMatch(/^mem_/)
+
+    const savedRules = await service.getEntriesByCategory('rule')
+    expect(savedRules.length).toBe(1)
+    expect(savedRules[0]?.content).toContain('[WORKFLOW] Target git branch selalu development, jangan push ke master')
+    expect(savedRules[0]?.metadata?.scope).toBe('workflow')
+
+    service.teardown()
+  })
+
+  it('injects active project rules at top priority and preserves domain separation from passive recall', async () => {
+    const ctx = new Context()
+    const service = new MultimodalEmbeddingService(ctx, Config({}))
+    ctx.set('multimodalEmbed', service)
+
+    // Save a rule and a lesson
+    await service.saveEntry('rule', '[WORKFLOW] Target branch selalu development', { scope: 'workflow' })
+    await service.saveEntry('lesson', 'Gunakan pnpm run test:unit untuk memvalidasi komponen')
+
+    registerToolRouterHook(ctx, service, Config({}))
+
+    const assembly: PromptAssembly = {
+      sections: [],
+      contexts: [],
+      tools: [],
+      variables: {
+        userPrompt: 'Bagaimana alur kerja git branch dan pengujian kita?',
+      },
+    }
+
+    await ctx.parallel('system-prompt/assemble', assembly, {}, async () => assembly)
+
+    // Verify Active Project Rules is at top priority
+    const rulesSection = assembly.sections.find(s => s.name === 'active-project-rules')
+    expect(rulesSection).toBeDefined()
+    expect(assembly.sections[0]?.name).toBe('active-project-rules')
+    expect(rulesSection?.text).toContain('## Active Project Rules & Guidelines')
+    expect(rulesSection?.text).toContain('[WORKFLOW] Target branch selalu development')
+
+    // Verify Passive Recall exists for lessons, but does not duplicate rules
+    const recallSection = assembly.sections.find(s => s.name === 'multimodal-memory-recall')
+    if (recallSection) {
+      expect(recallSection.text).not.toContain('[RULE]')
+    }
+
+    service.teardown()
   })
 })

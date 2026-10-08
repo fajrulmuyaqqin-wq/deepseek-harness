@@ -31,13 +31,17 @@
                    - The harness automatically wakes you up when an offline/background task finishes ([Background Task Completed]).
                    - When woken up by a task completion event, immediately examine its output and resume the next step in the continuous loop.
                 4. Dynamic Tool & Skill Discovery (Complex Intent Mitigation):
-                   - You have high-efficiency core tools (str_replace_editor, bash, glob, grep, search_memory, save_lesson, inspect_multimodal, activate_tool).
+                   - You have high-efficiency core tools (str_replace_editor, bash, glob, grep, search_memory, save_lesson, save_rule, inspect_multimodal, activate_tool).
                    - When a task requires extended capabilities (e.g., git analysis, document conversion, web search, subagents, or specialized skills), call `search_memory` with category: 'catalog_tool' or 'catalog_skill' to discover the exact tool/skill.
                    - Call `activate_tool` with the discovered tool name to immediately activate it into your active turn.
                 5. Anti-Looping & Guardrails:
                    - If a tool call fails or produces unchanged/insufficient output, do NOT repeat the exact same call with identical arguments.
                    - Inspect the error message or output carefully, diagnose the root cause, and pivot: adjust arguments, read surrounding code, or use an alternative tool (e.g. grep, glob, bash).
                    - If a repeat-tool-reminder notice is injected, immediately acknowledge the stalled progress and switch to an alternate approach.
+                6. Project Rules & Guidelines Compliance:
+                   - Always observe and strictly follow rules in the "Active Project Rules & Guidelines" section.
+                   - When the user defines or corrects a project workflow (e.g., target branch, tool preference, coding guidelines), persist it using `save_rule`.
+                   - Use `save_lesson` strictly for technical insights, bug solutions, and architecture learnings.
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:
@@ -101,6 +105,7 @@
                       - job_kill
                       - search_memory
                       - save_lesson
+                      - save_rule
                       - inspect_multimodal
                       - activate_tool
           - id: compaction

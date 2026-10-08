@@ -224,6 +224,10 @@ export class MultimodalEmbeddingService extends Service implements MultimodalEmb
     return Promise.resolve(this.db.search(queryVector, limit, threshold, category))
   }
 
+  getEntriesByCategory(category: MemoryCategory, limit = 10): Promise<MemoryItem[]> {
+    return Promise.resolve(this.db.getEntriesByCategory(category, limit))
+  }
+
   teardown(): void {
     for (const [id, req] of this.pendingRequests.entries()) {
       clearTimeout(req.timer)

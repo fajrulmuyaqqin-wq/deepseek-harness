@@ -135,6 +135,37 @@ export class VectorDatabase {
     return results.slice(0, limit)
   }
 
+  getEntriesByCategory(category: MemoryItem['category'], limit = 10): MemoryItem[] {
+    const query = this.db.prepare(
+      'SELECT id, category, content, metadata, created_at FROM multimodal_memories WHERE category = ? ORDER BY created_at DESC LIMIT ?',
+    )
+    const rows = query.all(category, limit) as unknown as Array<{
+      id: string
+      category: MemoryItem['category']
+      content: string
+      metadata?: string | null
+      created_at: number
+    }>
+    return rows.map((row) => {
+      let metadata: Record<string, unknown> | undefined
+      if (row.metadata) {
+        try {
+          metadata = JSON.parse(row.metadata) as Record<string, unknown>
+        } catch {
+          metadata = undefined
+        }
+      }
+      return {
+        id: row.id,
+        category: row.category,
+        content: row.content,
+        score: 1.0,
+        metadata,
+        createdAt: row.created_at,
+      }
+    })
+  }
+
   count(): number {
     const row = this.db.prepare('SELECT COUNT(*) as count FROM multimodal_memories').get() as { count: number }
     return row.count

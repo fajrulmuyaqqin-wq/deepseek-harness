@@ -58,7 +58,7 @@ export const memoryRecallSchema: z<Partial<MemoryRecallConfig>, MemoryRecallConf
   maxItems: z.number().step(1).min(1).max(10).default(3)
     .description('Maximum number of memory items injected per turn'),
   categories: z.array(z.string()).default(['lesson', 'code', 'summary', 'asset'])
-    .description('Memory categories eligible for passive recall; catalog_tool and catalog_skill are excluded by default'),
+    .description('Memory categories eligible for passive recall; rules are separately injected at highest priority'),
 })
 
 export const Config: z<Partial<MultimodalEmbedConfig>, MultimodalEmbedConfig> = z.object({

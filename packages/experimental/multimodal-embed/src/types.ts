@@ -4,7 +4,7 @@
  * @module @deepseek-ai/dsh-experimental-multimodal-embed/types
  */
 
-export type MemoryCategory = 'code' | 'lesson' | 'asset' | 'summary' | 'catalog_tool' | 'catalog_skill'
+export type MemoryCategory = 'code' | 'lesson' | 'asset' | 'summary' | 'rule' | 'catalog_tool' | 'catalog_skill'
 
 export interface MemoryItem {
   readonly id: string
@@ -45,6 +45,9 @@ export interface MultimodalEmbedService {
     threshold?: number,
     category?: MemoryCategory | MemoryCategory[],
   ): Promise<MemoryItem[]>
+
+  /** Retrieve recent memory entries by category without requiring vector search. */
+  getEntriesByCategory(category: MemoryCategory, limit?: number): Promise<MemoryItem[]>
 
   /** Save a new memory entry to the vector store. */
   saveEntry(
