@@ -17,42 +17,44 @@ export function registerCompactionListener(
 ): void {
   if (!config.autoCaptureCompacted) return
 
-  ctx.on('session/event', async (_session, event) => {
-    try {
-      const rawEvent = event as {
-        type: string
-        data?: {
-          summary?: Array<{ type?: string; text?: string }>
-          compactionId?: string
-          shadowedTokenCount?: number
-          shadowedSeqs?: unknown[]
+  ctx.on('session/event', (_session, event) => {
+    void (async () => {
+      try {
+        const rawEvent = event as {
+          type: string
+          data?: {
+            summary?: Array<{ type?: string; text?: string }>
+            compactionId?: string
+            shadowedTokenCount?: number
+            shadowedSeqs?: unknown[]
+          }
         }
+        if (rawEvent.type === 'compaction/summary') {
+          const data = rawEvent.data
+          if (!data || !data.summary) return
+
+          // Extract summary text blocks
+          const summaryText = data.summary
+            .filter((block): block is { text: string } => typeof block.text === 'string' && block.text.trim().length > 0)
+            .map(block => block.text)
+            .join('\n\n')
+
+          if (summaryText.length === 0) return
+
+          const id = await service.saveEntry('summary', summaryText, {
+            compactionId: data.compactionId,
+            shadowedTokenCount: data.shadowedTokenCount,
+            shadowedSeqsCount: data.shadowedSeqs?.length ?? 0,
+          })
+
+          ctx.logger.info(
+            `multimodal-embed: captured compacted summary into vector store (id: ${id}, ~${data.shadowedTokenCount ?? 0} tokens saved)`,
+          )
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        ctx.logger.warn(`multimodal-embed compaction capture error: ${msg}`)
       }
-      if (rawEvent.type === 'compaction/summary') {
-        const data = rawEvent.data
-        if (!data || !data.summary) return
-
-        // Extract summary text blocks
-        const summaryText = data.summary
-          .filter((block): block is { text: string } => typeof block.text === 'string' && block.text.trim().length > 0)
-          .map(block => block.text)
-          .join('\n\n')
-
-        if (summaryText.length === 0) return
-
-        const id = await service.saveEntry('summary', summaryText, {
-          compactionId: data.compactionId,
-          shadowedTokenCount: data.shadowedTokenCount,
-          shadowedSeqsCount: data.shadowedSeqs?.length ?? 0,
-        })
-
-        ctx.logger.info(
-          `multimodal-embed: captured compacted summary into vector store (id: ${id}, ~${data.shadowedTokenCount ?? 0} tokens saved)`,
-        )
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
-      ctx.logger.warn(`multimodal-embed compaction capture error: ${msg}`)
-    }
+    })()
   })
 }

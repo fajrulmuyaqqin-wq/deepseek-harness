@@ -114,7 +114,7 @@ async function runBenchmark() {
   console.log('\n=== SELURUH FASE (1-6) VALID DAN TERUJI SUKSES ===')
 }
 
-runBenchmark().catch((err) => {
+runBenchmark().catch((err: unknown) => {
   console.error('Benchmark failed:', err)
   process.exit(1)
 })

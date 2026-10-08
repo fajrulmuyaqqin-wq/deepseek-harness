@@ -28,13 +28,16 @@ export function registerToolRouterHook(
   // Cache for tool vector representations
   const toolVectorCache = new Map<string, Float32Array>()
 
-  // Turn-boundary lock cache: Map<scopeKey, { key: string; activeToolNames: Set<string> }>
-  const turnLockCache = new Map<string, { key: string; activeToolNames: Set<string> }>()
+  // Turn-boundary lock cache: Map<ScopeKey | 'global', { key: string; activeToolNames: Set<string> }>
+  type ScopeKey = AssembleContext['scope']
+  const turnLockCache = new Map<ScopeKey | 'global', { key: string; activeToolNames: Set<string> }>()
 
   // Sticky tools from previous turn
   const stickyTools = new Set<string>()
   // Tools executed in the current turn
   const currentTurnExecutedTools = new Set<string>()
+  // Set of indexed catalog entries
+  const indexedCatalog = new Set<string>()
 
   ctx.on('system-prompt/assemble', async (
     assembly: PromptAssembly,
@@ -42,17 +45,15 @@ export function registerToolRouterHook(
     next: () => Promise<PromptAssembly>,
   ): Promise<PromptAssembly> => {
     try {
-      if (!service) return await next()
-
       // Extract turn intent from variables or context
       const intentText = assembly.variables.userPrompt ?? assembly.variables.topic ?? ''
 
-      // 1. Passive RAG: Auto-inject top-3 relevant memories if confidence > 0.65
+      // 1. Passive RAG: Auto-inject top-3 relevant memories if confidence > threshold (calibrated to 0.35)
       if (intentText.trim().length > 0) {
         try {
           const intentVec = await service.embedText(intentText)
-          const recallThreshold = 0.65
-          const maxMemories = config.maxRetrievalItems ?? 3
+          const recallThreshold = config.toolRouting.similarityThreshold
+          const maxMemories = config.maxRetrievalItems
           const memories = await service.searchSimilar(intentVec, maxMemories, recallThreshold)
 
           if (memories.length > 0) {
@@ -82,7 +83,7 @@ export function registerToolRouterHook(
       }
 
       // Check Turn-Boundary Lock
-      const scopeKey = String(context.scope ?? 'global')
+      const scopeKey = context.scope ?? 'global'
       const lock = turnLockCache.get(scopeKey)
 
       if (config.toolRouting.policy === 'turn-boundary' && lock) {
@@ -121,9 +122,16 @@ export function registerToolRouterHook(
       for (const tool of candidateTools) {
         let toolVec = toolVectorCache.get(tool.name)
         if (!toolVec) {
-          const textToEmbed = `${tool.name} ${tool.description ?? ''}`
+          const textToEmbed = `${tool.name} ${tool.description}`
           toolVec = await service.embedText(textToEmbed)
           toolVectorCache.set(tool.name, toolVec)
+        }
+
+        // Index candidate tools into vector catalog (category: 'catalog_tool') for search_memory
+        if (!indexedCatalog.has(`tool_${tool.name}`)) {
+          indexedCatalog.add(`tool_${tool.name}`)
+          const toolDoc = `[TOOL: ${tool.name}]\nDescription: ${tool.description}`
+          service.saveEntry('catalog_tool', toolDoc, { toolName: tool.name }, `tool_${tool.name}`).catch(() => {})
         }
 
         const score = service.cosineSimilarity(intentVector, toolVec)
@@ -159,7 +167,7 @@ export function registerToolRouterHook(
   // Track executed tools during turn and update sticky set upon turn completion
   ctx.on('session/event', (_session, event) => {
     if (event.type === 'tool/call') {
-      const toolName = event.data?.name
+      const toolName = event.data.name
       if (typeof toolName === 'string') {
         currentTurnExecutedTools.add(toolName)
       }

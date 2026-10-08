@@ -20,7 +20,7 @@ const taskQueue: Array<WorkerRequest> = []
 
 function postResponse(res: WorkerResponse): void {
   if (!parentPort) return
-  if (res.ok && res.vector && res.vector.buffer instanceof ArrayBuffer) {
+  if (res.ok && res.vector.buffer instanceof ArrayBuffer) {
     // Zero-Copy transferable ArrayBuffer transfer
     parentPort.postMessage(res, [res.vector.buffer])
   } else {
@@ -91,11 +91,13 @@ async function processNext(): Promise<void> {
     })
   } finally {
     processing = false
-    setImmediate(processNext)
+    setImmediate(() => {
+      void processNext()
+    })
   }
 }
 
 parentPort.on('message', (req: WorkerRequest) => {
   taskQueue.push(req)
-  processNext()
+  void processNext()
 })

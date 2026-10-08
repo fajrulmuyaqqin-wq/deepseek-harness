@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type {
   MultimodalEmbedService,
+  MemoryCategory,
   MemoryItem,
   ImageHintResult,
   AudioHintResult,
@@ -172,11 +173,13 @@ export class MultimodalEmbeddingService extends Service implements MultimodalEmb
       signal,
     )
     if (!res.ok) throw new Error(res.error)
+    const width = typeof res.meta?.width === 'number' ? res.meta.width : this.config.maxImageDimension
+    const height = typeof res.meta?.height === 'number' ? res.meta.height : this.config.maxImageDimension
     return {
       vector: res.vector,
       semanticHints: res.semanticHints ?? [],
-      width: (res.meta?.width as number) ?? this.config.maxImageDimension,
-      height: (res.meta?.height as number) ?? this.config.maxImageDimension,
+      width,
+      height,
     }
   }
 
@@ -187,10 +190,11 @@ export class MultimodalEmbeddingService extends Service implements MultimodalEmb
       signal,
     )
     if (!res.ok) throw new Error(res.error)
+    const durationSec = typeof res.meta?.durationSec === 'number' ? res.meta.durationSec : 0
     return {
       vector: res.vector,
       intentHint: res.semanticHints?.[0] ?? 'voice-audio',
-      durationSec: (res.meta?.durationSec as number) ?? 0,
+      durationSec,
     }
   }
 
@@ -199,22 +203,24 @@ export class MultimodalEmbeddingService extends Service implements MultimodalEmb
   }
 
   async saveEntry(
-    category: MemoryItem['category'],
+    category: MemoryCategory,
     content: string,
     metadata?: Record<string, unknown>,
+    id?: string,
   ): Promise<string> {
     const vector = await this.embedText(content)
-    const id = `mem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-    this.db.save(id, category, content, vector, metadata)
-    return id
+    const entryId = id ?? `mem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    this.db.save(entryId, category, content, vector, metadata)
+    return entryId
   }
 
-  async searchSimilar(
+  searchSimilar(
     queryVector: Float32Array,
     limit = this.config.maxRetrievalItems,
     threshold = this.config.similarityThreshold,
+    category?: string,
   ): Promise<MemoryItem[]> {
-    return this.db.search(queryVector, limit, threshold)
+    return Promise.resolve(this.db.search(queryVector, limit, threshold, category as MemoryCategory))
   }
 
   teardown(): void {

@@ -4,9 +4,11 @@
  * @module @deepseek-ai/dsh-experimental-multimodal-embed/types
  */
 
+export type MemoryCategory = 'code' | 'lesson' | 'asset' | 'summary' | 'catalog_tool' | 'catalog_skill'
+
 export interface MemoryItem {
   readonly id: string
-  readonly category: 'code' | 'lesson' | 'asset' | 'summary'
+  readonly category: MemoryCategory
   readonly content: string
   readonly score: number
   readonly metadata?: Record<string, unknown> | undefined
@@ -36,14 +38,15 @@ export interface MultimodalEmbedService {
   /** Chunk, preprocess, and embed an audio clip into vector + intent hint. */
   embedAudio(audioBuffer: Uint8Array, signal?: AbortSignal): Promise<AudioHintResult>
 
-  /** Search similar memories in the local vector store. */
-  searchSimilar(vector: Float32Array, limit?: number, threshold?: number): Promise<MemoryItem[]>
+  /** Search similar memories in the local vector store with optional category filter. */
+  searchSimilar(vector: Float32Array, limit?: number, threshold?: number, category?: string): Promise<MemoryItem[]>
 
   /** Save a new memory entry to the vector store. */
   saveEntry(
-    category: MemoryItem['category'],
+    category: MemoryCategory,
     content: string,
     metadata?: Record<string, unknown>,
+    id?: string,
   ): Promise<string>
 
   /** Calculate cosine similarity between two 768-D vectors. */

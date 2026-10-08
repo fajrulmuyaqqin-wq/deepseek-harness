@@ -67,7 +67,7 @@ export class MultimodalEmbedder {
   private tokenizer: ((text: string) => Promise<TokenizerOutput>) | null = null
   private initPromise: Promise<boolean> | null = null
 
-  constructor(maxThreads = 2, modelPath?: string | undefined) {
+  constructor(maxThreads = 2, modelPath?: string) {
     this.maxThreads = maxThreads
     this.modelPath = modelPath
   }
@@ -89,7 +89,7 @@ export class MultimodalEmbedder {
   }
 
   /** Configure runtime parameters (Thread Clamping). */
-  configure(threads: number, modelPath?: string | undefined): void {
+  configure(threads: number, modelPath?: string): void {
     this.maxThreads = Math.max(1, Math.min(4, threads))
     if (modelPath !== undefined) {
       this.modelPath = modelPath

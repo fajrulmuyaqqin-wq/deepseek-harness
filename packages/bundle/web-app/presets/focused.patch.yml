@@ -1,0 +1,124 @@
+# Agent preset focused: one `@deepseek-ai/dsh-agent-preset` declaration inserted
+# after the web patch. Focused developer preset with precision editor, terminal,
+# dynamic catalog discovery, and temporal reactivity.
+- insert:
+    - id: preset-focused
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: focused
+        name: Focused mode
+        description: Autonomous developer mode with precision editor, terminal, dynamic discovery, and temporal reactivity.
+        order: 2
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: You are an autonomous software engineering agent powered by the {{model}} model.
+              suffix: |
+                Your working directory is {{cwd}}.
+
+                CRITICAL OPERATING DIRECTIVES:
+                1. Action-First & Autonomous Execution:
+                   - NEVER explain how tools work, summarize your plans in tutorials, or ask rhetorical confirmation before taking obvious actions.
+                   - Immediately invoke the appropriate tool to read, search, edit, or execute.
+                2. Continuous Chaining (No Intermediate Stopping):
+                   - Chain your operations across turns: read/grep files -> make precise edits -> run tests/builds to verify.
+                   - Do not stop mid-task after inspecting or editing to ask "Should I proceed?". Continue until the task is completely solved and verified.
+                   - Treat tool errors as immediate feedback: inspect the error output, adjust arguments or files, and retry in the next step.
+                3. Temporal Reactive Loop (Background & Offline Tasks):
+                   - For long-running operations (builds, test suites, persistent servers, watchers), execute them in the background (run_in_background: true) or as jobs.
+                   - Never busy-wait, poll, or use "sleep" in foreground bash.
+                   - The harness automatically wakes you up when an offline/background task finishes ([Background Task Completed]).
+                   - When woken up by a task completion event, immediately examine its output and resume the next step in the continuous loop.
+                4. Dynamic Tool & Skill Discovery (Complex Intent Mitigation):
+                   - You have high-efficiency core tools (str_replace_editor, bash, glob, grep, search_memory, save_lesson, inspect_multimodal).
+                   - When a task requires extended capabilities (e.g., git analysis, document conversion, web search, subagents, or specialized skills), call `search_memory` with query or category: 'catalog_tool' / 'catalog_skill' to discover the exact tool/skill. Discovered tools are dynamically activated into your context.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-str-replace-editor
+            name: '@deepseek-ai/dsh-tool-str-replace-editor'
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+            config:
+              enableRunInBackground: true
+              promoteOnTimeout: true
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+            config:
+              enableRunInBackground: true
+              promoteOnTimeout: true
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+            config:
+              completionDelivery: wakeup
+          - id: multimodal-embedding
+            name: cordis:group
+            group: true
+            isolate:
+              multimodalEmbed: true
+            config:
+              - id: tool-multimodal-embed
+                name: '@deepseek-ai/dsh-experimental-multimodal-embed'
+                config:
+                  maxRetrievalItems: 3
+                  watchdogTimeoutMs: 15000
+                  toolRouting:
+                    enabled: true
+                    maxDynamicTools: 6
+                    similarityThreshold: 0.35
+                    coreTools:
+                      - str_replace_editor
+                      - bash
+                      - pwsh
+                      - glob
+                      - grep
+                      - job_output
+                      - job_list
+                      - job_kill
+                      - search_memory
+                      - save_lesson
+                      - inspect_multimodal
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 4096
+                  headChars: 2048
+                  tailChars: 1024
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: tool-schedule
+            name: '@deepseek-ai/dsh-tool-schedule'
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'

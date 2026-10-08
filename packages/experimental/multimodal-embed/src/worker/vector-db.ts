@@ -100,19 +100,19 @@ export class VectorDatabase {
         let metadata: Record<string, unknown> | undefined
         if (row.metadata) {
           try {
-            metadata = JSON.parse(row.metadata)
+            metadata = JSON.parse(row.metadata) as Record<string, unknown>
           } catch {
             metadata = undefined
           }
         }
 
         const item: MemoryItem = {
-          id: String(row.id),
-          category: row.category as MemoryItem['category'],
-          content: String(row.content),
+          id: row.id,
+          category: row.category,
+          content: row.content,
           score,
           metadata,
-          createdAt: Number(row.created_at),
+          createdAt: row.created_at,
         }
         results.push(item)
       }

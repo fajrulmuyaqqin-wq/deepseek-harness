@@ -245,9 +245,26 @@ describe('the shipped Web composition', () => {
   it('supplies both shipped presets, and only those, from the system root', async () => {
     const listed = await ctx.agentPresets.list()
 
-    expect(listed.map(preset => preset.id).sort()).toEqual(['cordis', 'minimal', 'ptc', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual(['cordis', 'focused', 'minimal', 'ptc', 'standard'])
     expect(listed.every(preset => !('path' in preset))).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
+  })
+
+  it('composes the agent from `focused`', async () => {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('preset-focused'),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'focused').then(() => undefined),
+    })
+    try {
+      const names = toolNames(ctx, handle.agent)
+      expect(names).toContain('str_replace_editor')
+      expect(names).toContain('bash')
+      expect(names).toContain('search_memory')
+      expect(names).toContain('save_lesson')
+      expect(names).toContain('inspect_multimodal')
+    } finally {
+      await handle.dispose()
+    }
   })
 
   it('composes the full agent from `standard`', async () => {

@@ -35,7 +35,7 @@ export function createSaveLessonTool(service: MultimodalEmbedService) {
       ],
     },
     async execute(args) {
-      const category = (args.category as 'code' | 'lesson' | 'asset') || 'lesson'
+      const category = args.category === 'code' || args.category === 'asset' ? args.category : 'lesson'
       const content = `[${args.topic}]\n${args.lesson}`
       const id = await service.saveEntry(category, content, {
         topic: args.topic,
