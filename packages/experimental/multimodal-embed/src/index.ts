@@ -12,6 +12,7 @@ import { MultimodalEmbeddingService } from './service.ts'
 import { createSearchMemoryTool } from './tools/search-memory.ts'
 import { createSaveLessonTool } from './tools/save-lesson.ts'
 import { createSaveRuleTool } from './tools/save-rule.ts'
+import { createManageMemoryTool } from './tools/manage-memory.ts'
 import { createInspectMultimodalTool } from './tools/inspect-multimodal.ts'
 import { createActivateToolTool } from './tools/activate-tool.ts'
 import { registerToolRouterHook } from './hooks/on-assemble.ts'
@@ -23,6 +24,7 @@ export * from './service.ts'
 export * from './tools/activate-tool.ts'
 export * from './tools/save-rule.ts'
 export * from './tools/save-lesson.ts'
+export * from './tools/manage-memory.ts'
 export * from './directive-sniffer.ts'
 export * from './hooks/on-compaction.ts'
 
@@ -44,6 +46,7 @@ export function apply(ctx: Context, config: MultimodalEmbedConfig): void {
 
   // 3. Register Agent Tools (Zero-collision, defineTool)
   ctx.effect(() => {
+    const unregisterManage = ctx.tools.register(createManageMemoryTool(service))
     const unregisterSearch = ctx.tools.register(createSearchMemoryTool(service))
     const unregisterSave = ctx.tools.register(createSaveLessonTool(service))
     const unregisterSaveRule = ctx.tools.register(createSaveRuleTool(service))
@@ -51,6 +54,7 @@ export function apply(ctx: Context, config: MultimodalEmbedConfig): void {
     const unregisterActivate = ctx.tools.register(createActivateToolTool(activator))
 
     return () => {
+      unregisterManage()
       unregisterSearch()
       unregisterSave()
       unregisterSaveRule()

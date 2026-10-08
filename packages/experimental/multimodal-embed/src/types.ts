@@ -57,6 +57,12 @@ export interface MultimodalEmbedService {
     id?: string,
   ): Promise<string>
 
+  /** Delete a memory entry by ID. */
+  deleteEntry(id: string): Promise<boolean>
+
+  /** Delete memories by category and/or query keyword match. */
+  deleteEntriesByQuery(query?: string, category?: MemoryCategory): Promise<{ deletedCount: number; deletedIds: string[] }>
+
   /** Calculate cosine similarity between two 768-D vectors. */
   cosineSimilarity(a: Float32Array, b: Float32Array): number
 }

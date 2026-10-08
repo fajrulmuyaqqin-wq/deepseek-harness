@@ -166,6 +166,40 @@ export class VectorDatabase {
     })
   }
 
+  delete(id: string): boolean {
+    const stmt = this.db.prepare('DELETE FROM multimodal_memories WHERE id = ?')
+    const res = stmt.run(id) as { changes: number }
+    return res.changes > 0
+  }
+
+  deleteByQuery(category?: MemoryItem['category'], queryText?: string): { deletedCount: number; deletedIds: string[] } {
+    let rows: Array<{ id: string }> = []
+
+    if (category && queryText && queryText.trim().length > 0) {
+      const pattern = `%${queryText.trim()}%`
+      const selectStmt = this.db.prepare('SELECT id FROM multimodal_memories WHERE category = ? AND content LIKE ?')
+      rows = selectStmt.all(category, pattern) as unknown as Array<{ id: string }>
+      const deleteStmt = this.db.prepare('DELETE FROM multimodal_memories WHERE category = ? AND content LIKE ?')
+      deleteStmt.run(category, pattern)
+    } else if (category && (!queryText || queryText.trim().length === 0)) {
+      const selectStmt = this.db.prepare('SELECT id FROM multimodal_memories WHERE category = ?')
+      rows = selectStmt.all(category) as unknown as Array<{ id: string }>
+      const deleteStmt = this.db.prepare('DELETE FROM multimodal_memories WHERE category = ?')
+      deleteStmt.run(category)
+    } else if (queryText && queryText.trim().length > 0) {
+      const pattern = `%${queryText.trim()}%`
+      const selectStmt = this.db.prepare('SELECT id FROM multimodal_memories WHERE content LIKE ?')
+      rows = selectStmt.all(pattern) as unknown as Array<{ id: string }>
+      const deleteStmt = this.db.prepare('DELETE FROM multimodal_memories WHERE content LIKE ?')
+      deleteStmt.run(pattern)
+    }
+
+    return {
+      deletedCount: rows.length,
+      deletedIds: rows.map(r => r.id),
+    }
+  }
+
   count(): number {
     const row = this.db.prepare('SELECT COUNT(*) as count FROM multimodal_memories').get() as { count: number }
     return row.count

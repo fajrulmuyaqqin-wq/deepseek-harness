@@ -11,7 +11,8 @@ import { Config } from '../src/config.ts'
 import { registerToolRouterHook } from '../src/hooks/on-assemble.ts'
 import { createSaveRuleTool, type SaveRuleResult } from '../src/tools/save-rule.ts'
 import { createSaveLessonTool } from '../src/tools/save-lesson.ts'
-import { extractDirectiveCandidate } from '../src/directive-sniffer.ts'
+import { createManageMemoryTool, type ManageMemoryResult } from '../src/tools/manage-memory.ts'
+import { extractDirectiveCandidate, extractRevocationCandidate, autoSniffAndRevokeDirective } from '../src/directive-sniffer.ts'
 import { distillCompactedSummary, registerCompactionListener } from '../src/hooks/on-compaction.ts'
 
 describe('Turn-Boundary Tool-RAG & Passive Memory Recall (on-assemble)', () => {
@@ -686,6 +687,130 @@ describe('Turn-Boundary Tool-RAG & Passive Memory Recall (on-assemble)', () => {
     const storedRules = await service.getEntriesByCategory('rule', 10)
     expect(storedRules.length).toBeGreaterThan(0)
     expect(storedRules.some(r => r.content.includes('development'))).toBe(true)
+
+    service.teardown()
+  })
+
+  it('executes full CRUD lifecycle through manage_memory unified sub-tools schema', async () => {
+    const ctx = new Context()
+    const service = new MultimodalEmbeddingService(ctx, Config({}))
+    const manageTool = createManageMemoryTool(service)
+
+    // 1. SAVE - Rule with scope
+    const saveRuleRes = (await manageTool.execute({
+      action: 'save',
+      category: 'rule',
+      content: 'Branch tujuan pull request harus development',
+      scope: 'workflow',
+    }, {} as never)) as ManageMemoryResult
+
+    expect(saveRuleRes.ok).toBe(true)
+    expect(saveRuleRes.action).toBe('save')
+    expect(saveRuleRes.id).toBeDefined()
+    expect(saveRuleRes.category).toBe('rule')
+
+    // SAVE - Duplicate rule should return existing ID
+    const saveRuleDup = (await manageTool.execute({
+      action: 'save',
+      category: 'rule',
+      content: 'Branch tujuan pull request harus development',
+      scope: 'workflow',
+    }, {} as never)) as ManageMemoryResult
+    expect(saveRuleDup.ok).toBe(true)
+    expect(saveRuleDup.id).toBe(saveRuleRes.id)
+
+    // 2. SAVE - Lesson
+    const saveLessonRes = (await manageTool.execute({
+      action: 'save',
+      category: 'lesson',
+      content: 'Optimasi vite bundle dengan rolldown codeSplitting: false',
+    }, {} as never)) as ManageMemoryResult
+
+    expect(saveLessonRes.ok).toBe(true)
+    expect(saveLessonRes.category).toBe('lesson')
+    const lessonId = saveLessonRes.id!
+
+    // 3. LIST - Category rule
+    const listRules = (await manageTool.execute({
+      action: 'list',
+      category: 'rule',
+    }, {} as never)) as ManageMemoryResult
+    expect(listRules.ok).toBe(true)
+    expect(listRules.results?.length).toBe(1)
+    expect(listRules.results?.[0]?.content).toContain('development')
+
+    // 4. SEARCH - Semantic vector search
+    const searchRes = (await manageTool.execute({
+      action: 'search',
+      query: 'optimasi bundling vite',
+      category: 'lesson',
+    }, { signal: new AbortController().signal } as never)) as ManageMemoryResult
+
+    expect(searchRes.ok).toBe(true)
+    expect(searchRes.results?.length).toBeGreaterThan(0)
+    expect(searchRes.results?.[0]?.content).toContain('vite bundle')
+
+    // 5. DELETE - By specific ID
+    const deleteIdRes = (await manageTool.execute({
+      action: 'delete',
+      id: lessonId,
+    }, {} as never)) as ManageMemoryResult
+    expect(deleteIdRes.ok).toBe(true)
+    expect(deleteIdRes.deletedCount).toBe(1)
+
+    // Verify deletion in DB
+    const lessonsAfter = await service.getEntriesByCategory('lesson', 10)
+    expect(lessonsAfter.some(l => l.id === lessonId)).toBe(false)
+
+    // 6. DELETE - By query string
+    const deleteQueryRes = (await manageTool.execute({
+      action: 'delete',
+      category: 'rule',
+      query: 'Branch tujuan pull request',
+    }, {} as never)) as ManageMemoryResult
+    expect(deleteQueryRes.ok).toBe(true)
+    expect(deleteQueryRes.deletedCount).toBe(1)
+
+    const rulesAfter = await service.getEntriesByCategory('rule', 10)
+    expect(rulesAfter.length).toBe(0)
+
+    service.teardown()
+  })
+
+  it('extracts revocation candidates and auto-revokes obsolete rules/memories', async () => {
+    // 1. Regex candidate extraction tests
+    const rev1 = extractRevocationCandidate('hapus aturan tentang target git branch')
+    expect(rev1).toBeDefined()
+    expect(rev1?.query).toBe('target git branch')
+    expect(rev1?.category).toBe('rule')
+
+    const rev2 = extractRevocationCandidate('lupakan ingatan mengenai perbaikan exactOptionalPropertyTypes')
+    expect(rev2).toBeDefined()
+    expect(rev2?.query).toBe('perbaikan exactOptionalPropertyTypes')
+    expect(rev2?.category).toBe('lesson')
+
+    const rev3 = extractRevocationCandidate('delete rule about workflow branch')
+    expect(rev3).toBeDefined()
+    expect(rev3?.query).toBe('workflow branch')
+    expect(rev3?.category).toBe('rule')
+
+    // Questions should be rejected
+    expect(extractRevocationCandidate('apakah aturan branch sudah dihapus?')).toBeUndefined()
+
+    // 2. Integration with service: save then auto-revoke
+    const ctx = new Context()
+    const service = new MultimodalEmbeddingService(ctx, Config({}))
+
+    await service.saveEntry('rule', '[WORKFLOW] Jangan pernah push langsung ke master')
+    const beforeRules = await service.getEntriesByCategory('rule', 10)
+    expect(beforeRules.length).toBe(1)
+
+    const revokeSettlement = await autoSniffAndRevokeDirective(service, 'hapus aturan tentang jangan pernah push langsung ke master')
+    expect(revokeSettlement.revoked).toBe(true)
+    expect(revokeSettlement.deletedCount).toBe(1)
+
+    const afterRules = await service.getEntriesByCategory('rule', 10)
+    expect(afterRules.length).toBe(0)
 
     service.teardown()
   })

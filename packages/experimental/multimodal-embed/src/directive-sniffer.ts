@@ -188,3 +188,86 @@ export async function autoSniffAndSaveDirective(
     return { saved: false }
   }
 }
+
+export interface RevocationCandidate {
+  readonly query: string
+  readonly category?: 'rule' | 'lesson' | undefined
+}
+
+/**
+ * Extracts a candidate revocation/deletion request from user input text.
+ *
+ * @param text - Raw message text from user.
+ * @returns Extracted revocation query and category, or undefined if no revocation pattern matched.
+ */
+export function extractRevocationCandidate(text: string): RevocationCandidate | undefined {
+  const trimmed = text.trim()
+  if (trimmed.length < 5 || trimmed.length > 300) return undefined
+  if (trimmed.endsWith('?')) return undefined
+
+  // Match Indonesian revocation
+  const idRegex = new RegExp(
+    '^(?:tolong\\s+|mohon\\s+)?(?:hapus|lupakan|cabut|batalkan)\\s+(?:semua\\s+)?' +
+    '(?:aturan|ingatan|rule|lesson|memori)?\\s*(?:tentang|mengenai|soal)?\\s*[:"\' ]?([^"\'\\n]+)["\']?$',
+    'i',
+  )
+  const matchId = idRegex.exec(trimmed)
+  if (matchId && matchId[1]) {
+    const rawTarget = matchId[1].trim()
+    const isRule = /aturan|rule/i.test(trimmed)
+    const isLesson = /ingatan|pelajaran|lesson/i.test(trimmed)
+    return {
+      query: rawTarget,
+      category: isRule ? 'rule' : isLesson ? 'lesson' : undefined,
+    }
+  }
+
+  // Match English revocation
+  const enRegex = new RegExp(
+    '^(?:please\\s+)?(?:delete|forget|revoke|remove|cancel)\\s+(?:the\\s+)?' +
+    '(?:rule|lesson|memory)?\\s*(?:about|regarding)?\\s*[:"\' ]?([^"\'\\n]+)["\']?$',
+    'i',
+  )
+  const matchEn = enRegex.exec(trimmed)
+  if (matchEn && matchEn[1]) {
+    const rawTarget = matchEn[1].trim()
+    const isRule = /rule/i.test(trimmed)
+    const isLesson = /lesson|memory/i.test(trimmed)
+    return {
+      query: rawTarget,
+      category: isRule ? 'rule' : isLesson ? 'lesson' : undefined,
+    }
+  }
+
+  return undefined
+}
+
+/**
+ * Evaluates user input text and autonomously deletes matching rules/memories when a revocation directive is detected.
+ *
+ * @param service - MultimodalEmbedService instance.
+ * @param text - User message text.
+ * @param logger - Optional logger for operational observability.
+ * @returns Settlement details of auto-revoke operation.
+ */
+export async function autoSniffAndRevokeDirective(
+  service: MultimodalEmbedService,
+  text: string,
+  logger?: DirectiveSnifferLogger,
+): Promise<{ revoked: boolean; deletedCount: number; query?: string }> {
+  const candidate = extractRevocationCandidate(text)
+  if (!candidate) return { revoked: false, deletedCount: 0 }
+
+  try {
+    const res = await service.deleteEntriesByQuery(candidate.query, candidate.category)
+    if (res.deletedCount > 0) {
+      logger?.info(`multimodal-embed: auto-revoked ${res.deletedCount} memories matching "${candidate.query}"`)
+      return { revoked: true, deletedCount: res.deletedCount, query: candidate.query }
+    }
+    return { revoked: false, deletedCount: 0, query: candidate.query }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    logger?.warn(`multimodal-embed: failed to auto-revoke directive: ${msg}`)
+    return { revoked: false, deletedCount: 0 }
+  }
+}

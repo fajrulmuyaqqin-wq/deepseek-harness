@@ -228,6 +228,14 @@ export class MultimodalEmbeddingService extends Service implements MultimodalEmb
     return Promise.resolve(this.db.getEntriesByCategory(category, limit))
   }
 
+  deleteEntry(id: string): Promise<boolean> {
+    return Promise.resolve(this.db.delete(id))
+  }
+
+  deleteEntriesByQuery(query?: string, category?: MemoryCategory): Promise<{ deletedCount: number; deletedIds: string[] }> {
+    return Promise.resolve(this.db.deleteByQuery(category, query))
+  }
+
   teardown(): void {
     for (const [id, req] of this.pendingRequests.entries()) {
       clearTimeout(req.timer)

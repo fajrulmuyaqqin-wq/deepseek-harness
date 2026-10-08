@@ -16,7 +16,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { MultimodalEmbedService, MemoryCategory } from '../types.ts'
 import type { MultimodalEmbedConfig } from '../config.ts'
 import type { ToolActivator } from '../tools/activate-tool.ts'
-import { autoSniffAndSaveDirective } from '../directive-sniffer.ts'
+import { autoSniffAndSaveDirective, autoSniffAndRevokeDirective } from '../directive-sniffer.ts'
 
 type ToolSchema = PromptAssembly['tools'][number]
 
@@ -36,6 +36,7 @@ export function registerToolRouterHook(
 ): ToolActivator {
   const coreToolsSet = new Set(config.toolRouting.coreTools)
   // Ensure essential tools are always part of core tools
+  coreToolsSet.add('manage_memory')
   coreToolsSet.add('search_memory')
   coreToolsSet.add('save_lesson')
   coreToolsSet.add('save_rule')
@@ -125,6 +126,7 @@ export function registerToolRouterHook(
 
       // Auto-sniff explicit directives from intentText before querying active rules
       if (config.autoCaptureDirectives && intentText.trim().length > 0) {
+        await autoSniffAndRevokeDirective(service, intentText, ctx.logger).catch(() => {})
         await autoSniffAndSaveDirective(service, intentText, ctx.logger).catch((err: unknown) => {
           ctx.logger.debug(`multimodal directive auto-capture deferred: ${String(err)}`)
         })
@@ -426,6 +428,7 @@ export function registerToolRouterHook(
         ...sourceKind !== undefined ? { sourceKind } : {},
       }
       if (config.autoCaptureDirectives && text.trim().length > 0) {
+        void autoSniffAndRevokeDirective(service, text, ctx.logger)
         void autoSniffAndSaveDirective(service, text, ctx.logger)
       }
     }
