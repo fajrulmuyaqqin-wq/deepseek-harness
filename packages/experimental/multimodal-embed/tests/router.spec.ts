@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { ToolSchema } from '@deepseek-ai/dsh-llm'
+import type { ToolExecutionFailure, ToolExecutionSuccess } from '@deepseek-ai/dsh-tools'
 import type { PromptAssembly, AssembleContext } from '@deepseek-ai/dsh-system-prompt'
 import { MultimodalEmbeddingService } from '../src/service.ts'
 import { Config } from '../src/config.ts'
@@ -216,6 +217,95 @@ describe('Turn-Boundary Tool-RAG & Passive Memory Recall (on-assemble)', () => {
     expect(recallSection).toBeDefined()
     expect(recallSection?.text).toContain('[LESSON]')
     expect(recallSection?.text).not.toContain('[CATALOG_TOOL]')
+
+    service.teardown()
+  })
+
+  it('auto-recovers and activates known catalog tools on error via tools/post-execute', async () => {
+    const ctx = new Context()
+    const service = new MultimodalEmbeddingService(ctx, Config({}))
+    ctx.set('multimodalEmbed', service)
+
+    registerToolRouterHook(ctx, service, Config({}))
+
+    const toolBlender: ToolSchema = {
+      name: 'blender_render',
+      description: 'Render 3D scene in Blender',
+      parameters: {},
+    }
+
+    // Register tool into assembly so it becomes known
+    const assembly: PromptAssembly = {
+      sections: [],
+      contexts: [],
+      tools: [toolBlender],
+      variables: {},
+    }
+    await ctx.parallel('system-prompt/assemble', assembly, {}, async () => assembly)
+
+    // Simulate an execution error for an unpruned/inactive tool call
+    const exec = {
+      name: 'blender_render',
+      agent: { session: { id: 'test-session-recovery' } },
+    } as never
+    const errResult: ToolExecutionFailure = {
+      isError: true,
+      error: { message: 'Unknown tool: blender_render' },
+      content: [],
+    }
+
+    const decision = await ctx.waterfall(
+      'tools/post-execute',
+      exec,
+      errResult,
+      async () => ({ kind: 'accept' as const, value: [] as never }),
+    )
+
+    // Check that auto-recovery notice was added to additionalContexts
+    expect(decision.additionalContexts).toBeDefined()
+    expect(decision.additionalContexts?.some(ctxMsg =>
+      ctxMsg.content.some(c => c.type === 'text' && c.text.includes('[Tool Catalog Auto-Recovery]')),
+    )).toBe(true)
+
+    service.teardown()
+  })
+
+  it('injects anti-loop warning on 3 consecutive tool execution errors', async () => {
+    const ctx = new Context()
+    const service = new MultimodalEmbeddingService(ctx, Config({}))
+    ctx.set('multimodalEmbed', service)
+
+    registerToolRouterHook(ctx, service, Config({}))
+
+    const exec = {
+      name: 'failing_tool',
+      agent: { session: { id: 'test-session-loop' } },
+    } as never
+    const errResult: ToolExecutionFailure = {
+      isError: true,
+      error: { message: 'Command failed' },
+      content: [],
+    }
+
+    // Failure 1
+    const d1 = await ctx.waterfall('tools/post-execute', exec, errResult, async () => ({ kind: 'accept' as const }))
+    expect(d1.additionalContexts?.some(c => c.content.some(b => b.type === 'text' && b.text.includes('[Anti-Loop Warning]')))).toBeFalsy()
+
+    // Failure 2
+    const d2 = await ctx.waterfall('tools/post-execute', exec, errResult, async () => ({ kind: 'accept' as const }))
+    expect(d2.additionalContexts?.some(c => c.content.some(b => b.type === 'text' && b.text.includes('[Anti-Loop Warning]')))).toBeFalsy()
+
+    // Failure 3 -> triggers warning
+    const d3 = await ctx.waterfall('tools/post-execute', exec, errResult, async () => ({ kind: 'accept' as const }))
+    expect(d3.additionalContexts?.some(c => c.content.some(b => b.type === 'text' && b.text.includes('[Anti-Loop Warning]')))).toBe(true)
+
+    // Success -> resets counter
+    const successResult: ToolExecutionSuccess = { isError: false, content: [], value: null }
+    await ctx.waterfall('tools/post-execute', exec, successResult, async () => ({ kind: 'accept' as const }))
+
+    // Failure 4 (counter reset to 1) -> no warning
+    const d4 = await ctx.waterfall('tools/post-execute', exec, errResult, async () => ({ kind: 'accept' as const }))
+    expect(d4.additionalContexts?.some(c => c.content.some(b => b.type === 'text' && b.text.includes('[Anti-Loop Warning]')))).toBeFalsy()
 
     service.teardown()
   })

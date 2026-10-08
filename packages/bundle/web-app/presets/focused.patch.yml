@@ -34,6 +34,10 @@
                    - You have high-efficiency core tools (str_replace_editor, bash, glob, grep, search_memory, save_lesson, inspect_multimodal, activate_tool).
                    - When a task requires extended capabilities (e.g., git analysis, document conversion, web search, subagents, or specialized skills), call `search_memory` with category: 'catalog_tool' or 'catalog_skill' to discover the exact tool/skill.
                    - Call `activate_tool` with the discovered tool name to immediately activate it into your active turn.
+                5. Anti-Looping & Guardrails:
+                   - If a tool call fails or produces unchanged/insufficient output, do NOT repeat the exact same call with identical arguments.
+                   - Inspect the error message or output carefully, diagnose the root cause, and pivot: adjust arguments, read surrounding code, or use an alternative tool (e.g. grep, glob, bash).
+                   - If a repeat-tool-reminder notice is injected, immediately acknowledge the stalled progress and switch to an alternate approach.
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:

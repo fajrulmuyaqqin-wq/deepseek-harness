@@ -8,6 +8,9 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { PromptAssembly, AssembleContext } from '@deepseek-ai/dsh-system-prompt'
+import type { PostToolDecision } from '@deepseek-ai/dsh-tools'
+import type { UserMessage } from '@deepseek-ai/dsh-session'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { MultimodalEmbedService, MemoryCategory } from '../types.ts'
 import type { MultimodalEmbedConfig } from '../config.ts'
 import type { ToolActivator } from '../tools/activate-tool.ts'
@@ -18,6 +21,7 @@ interface SessionState {
   readonly stickyTools: Set<string>
   readonly currentTurnExecutedTools: Set<string>
   readonly dynamicallyActivatedTools: Set<string>
+  consecutiveErrors: number
   turnLock?: { key: string; activeToolNames: Set<string> } | undefined
 }
 
@@ -49,6 +53,7 @@ export function registerToolRouterHook(
         stickyTools: new Set<string>(),
         currentTurnExecutedTools: new Set<string>(),
         dynamicallyActivatedTools: new Set<string>(),
+        consecutiveErrors: 0,
       }
       sessionStates.set(sessionId, state)
     }
@@ -269,6 +274,7 @@ export function registerToolRouterHook(
         state.currentTurnExecutedTools.add(toolName)
       }
     } else if (event.type === 'turn/end') {
+      state.consecutiveErrors = 0
       state.turnLock = undefined
       state.stickyTools.clear()
       for (const name of state.currentTurnExecutedTools) {
@@ -278,7 +284,61 @@ export function registerToolRouterHook(
         state.stickyTools.add(name)
       }
       state.currentTurnExecutedTools.clear()
+    } else if (event.type === 'user/message') {
+      state.consecutiveErrors = 0
     }
+  })
+
+  // Auto-recovery for catalog tools and anti-loop consecutive error guard
+  ctx.on('tools/post-execute', async (exec, result, next): Promise<PostToolDecision> => {
+    const sid = exec.agent?.session.id ? String(exec.agent.session.id) : lastActiveSessionId
+    const state = sid ? getOrCreateSessionState(sid) : undefined
+
+    let autoRecoveryNotice: string | undefined
+    if (result.isError && (allKnownTools.has(exec.name) || indexedCatalog.has(`tool_${exec.name}`))) {
+      if (sid) {
+        await activator.activateTool([exec.name], sid).catch(() => {})
+        autoRecoveryNotice = `[Tool Catalog Auto-Recovery] Tool "${exec.name}" has been automatically activated for your session. You can now invoke it with valid arguments.`
+      }
+    }
+
+    if (state) {
+      if (result.isError) {
+        state.consecutiveErrors += 1
+      } else {
+        state.consecutiveErrors = 0
+      }
+    }
+
+    const downstream = await next()
+
+    const additionalContexts: UserMessage[] = [...(downstream.additionalContexts ?? [])]
+
+    if (autoRecoveryNotice) {
+      additionalContexts.push(createUserMessage({
+        content: [{ type: 'text', text: autoRecoveryNotice }],
+        source: { kind: 'repeat-tool-reminder' as never, form: 'notice', summary: `auto-activated: ${exec.name}` },
+      }))
+    }
+
+    if (state && state.consecutiveErrors >= 3) {
+      additionalContexts.push(createUserMessage({
+        content: [{
+          type: 'text',
+          text: `[Anti-Loop Warning] ${state.consecutiveErrors} consecutive tool calls have failed. Stop repeating the current strategy. Carefully analyze the error messages, check paths/parameters, or use an alternative approach.`,
+        }],
+        source: { kind: 'repeat-tool-reminder' as never, form: 'notice', summary: `consecutive errors x ${state.consecutiveErrors}` },
+      }))
+    }
+
+    if (additionalContexts.length > (downstream.additionalContexts?.length ?? 0)) {
+      return {
+        ...downstream,
+        additionalContexts,
+      }
+    }
+
+    return downstream
   })
 
   // Clean up session state on session disposal
