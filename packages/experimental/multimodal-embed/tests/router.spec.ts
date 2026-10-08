@@ -124,4 +124,99 @@ describe('Turn-Boundary Tool-RAG & Passive Memory Recall (on-assemble)', () => {
 
     service.teardown()
   })
+
+  it('dynamically activates tools on-demand mid-turn via activator', async () => {
+    const ctx = new Context()
+    const service = new MultimodalEmbeddingService(ctx, Config({}))
+    ctx.set('multimodalEmbed', service)
+
+    const config = Config({
+      toolRouting: {
+        enabled: true,
+        policy: 'turn-boundary',
+        coreTools: ['read_file'],
+        maxDynamicTools: 1,
+        maxDynamicSkills: 0,
+        similarityThreshold: 0.8, // high threshold to prune toolLsp
+      },
+    })
+
+    const activator = registerToolRouterHook(ctx, service, config)
+
+    const toolLsp: ToolSchema = {
+      name: 'lsp_definition',
+      description: 'Find typescript symbol AST definition',
+      parameters: {},
+    }
+    const toolCore: ToolSchema = {
+      name: 'read_file',
+      description: 'Read file contents from disk',
+      parameters: {},
+    }
+
+    const dummyTools: ToolSchema[] = Array.from({ length: 5 }, (_, i) => ({
+      name: `dummy_tool_${i}`,
+      description: `Irrelevant dummy tool ${i}`,
+      parameters: {},
+    }))
+
+    const assembly: PromptAssembly = {
+      sections: [],
+      contexts: [],
+      tools: [toolCore, toolLsp, ...dummyTools],
+      variables: { userPrompt: 'Tulis dokumen baru' },
+    }
+    const context: AssembleContext = {
+      agent: { session: { id: 'test-session-1' } } as never,
+    }
+
+    // Step 1: lsp_definition is pruned due to low similarity
+    await ctx.parallel('system-prompt/assemble', assembly, context, async () => assembly)
+    expect(assembly.tools.map(t => t.name)).not.toContain('lsp_definition')
+
+    // Mid-turn: Model discovers and activates lsp_definition
+    const activationResult = await activator.activateTool(['lsp_definition'], 'test-session-1')
+    expect(activationResult.activated).toEqual(['lsp_definition'])
+
+    // Step 2 in same turn: assembly now includes dynamically activated tool!
+    const assemblyStep2: PromptAssembly = {
+      sections: [],
+      contexts: [],
+      tools: [toolCore, toolLsp, ...dummyTools],
+      variables: { userPrompt: 'Tulis dokumen baru' },
+    }
+    await ctx.parallel('system-prompt/assemble', assemblyStep2, context, async () => assemblyStep2)
+    expect(assemblyStep2.tools.map(t => t.name)).toContain('lsp_definition')
+
+    service.teardown()
+  })
+
+  it('excludes catalog_tool and catalog_skill from passive recall', async () => {
+    const ctx = new Context()
+    const service = new MultimodalEmbeddingService(ctx, Config({}))
+    ctx.set('multimodalEmbed', service)
+
+    // Save a catalog tool and a regular lesson
+    await service.saveEntry('catalog_tool', '[TOOL: git_status]\nDescription: Check working tree status', { toolName: 'git_status' })
+    await service.saveEntry('lesson', 'Always check git status before committing changes')
+
+    registerToolRouterHook(ctx, service, Config({}))
+
+    const assembly: PromptAssembly = {
+      sections: [],
+      contexts: [],
+      tools: [],
+      variables: { userPrompt: 'Bagaimana cara cek git status sebelum commit?' },
+    }
+    const context: AssembleContext = {}
+
+    await ctx.parallel('system-prompt/assemble', assembly, context, async () => assembly)
+
+    const recallSection = assembly.sections.find(s => s.name === 'multimodal-memory-recall')
+    expect(recallSection).toBeDefined()
+    expect(recallSection?.text).toContain('[LESSON]')
+    expect(recallSection?.text).not.toContain('[CATALOG_TOOL]')
+
+    service.teardown()
+  })
 })

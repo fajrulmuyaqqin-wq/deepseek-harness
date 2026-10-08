@@ -15,6 +15,13 @@ export interface ToolRoutingConfig {
   similarityThreshold: number
 }
 
+export interface MemoryRecallConfig {
+  enabled: boolean
+  similarityThreshold: number
+  maxItems: number
+  categories: string[]
+}
+
 export interface MultimodalEmbedConfig {
   modelPath?: string | undefined
   databasePath?: string | undefined
@@ -26,6 +33,7 @@ export interface MultimodalEmbedConfig {
   similarityThreshold: number
   maxRetrievalItems: number
   autoCaptureCompacted: boolean
+  recall: MemoryRecallConfig
   toolRouting: ToolRoutingConfig
 }
 
@@ -41,6 +49,16 @@ export const toolRoutingSchema: z<Partial<ToolRoutingConfig>, ToolRoutingConfig>
     .description('Maximum number of specialized skills admitted per turn'),
   similarityThreshold: z.number().min(0).max(1).default(0.65)
     .description('Minimum cosine similarity required to admit a dynamic tool or skill'),
+})
+
+export const memoryRecallSchema: z<Partial<MemoryRecallConfig>, MemoryRecallConfig> = z.object({
+  enabled: z.boolean().default(true).description('Enable automatic passive memory recall during prompt assembly'),
+  similarityThreshold: z.number().min(0).max(1).default(0.35)
+    .description('Minimum cosine similarity required to inject a memory entry into assembly'),
+  maxItems: z.number().step(1).min(1).max(10).default(3)
+    .description('Maximum number of memory items injected per turn'),
+  categories: z.array(z.string()).default(['lesson', 'code', 'summary', 'asset'])
+    .description('Memory categories eligible for passive recall; catalog_tool and catalog_skill are excluded by default'),
 })
 
 export const Config: z<Partial<MultimodalEmbedConfig>, MultimodalEmbedConfig> = z.object({
@@ -61,6 +79,12 @@ export const Config: z<Partial<MultimodalEmbedConfig>, MultimodalEmbedConfig> = 
     .description('Maximum memory items returned per query'),
   autoCaptureCompacted: z.boolean().default(true)
     .description('Automatically capture summaries pruned by compaction-basic into vector store'),
+  recall: memoryRecallSchema.default({
+    enabled: true,
+    similarityThreshold: 0.35,
+    maxItems: 3,
+    categories: ['lesson', 'code', 'summary', 'asset'],
+  }),
   toolRouting: toolRoutingSchema.default({
     enabled: true,
     policy: 'turn-boundary',

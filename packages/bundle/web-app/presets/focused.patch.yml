@@ -31,8 +31,9 @@
                    - The harness automatically wakes you up when an offline/background task finishes ([Background Task Completed]).
                    - When woken up by a task completion event, immediately examine its output and resume the next step in the continuous loop.
                 4. Dynamic Tool & Skill Discovery (Complex Intent Mitigation):
-                   - You have high-efficiency core tools (str_replace_editor, bash, glob, grep, search_memory, save_lesson, inspect_multimodal).
-                   - When a task requires extended capabilities (e.g., git analysis, document conversion, web search, subagents, or specialized skills), call `search_memory` with query or category: 'catalog_tool' / 'catalog_skill' to discover the exact tool/skill. Discovered tools are dynamically activated into your context.
+                   - You have high-efficiency core tools (str_replace_editor, bash, glob, grep, search_memory, save_lesson, inspect_multimodal, activate_tool).
+                   - When a task requires extended capabilities (e.g., git analysis, document conversion, web search, subagents, or specialized skills), call `search_memory` with category: 'catalog_tool' or 'catalog_skill' to discover the exact tool/skill.
+                   - Call `activate_tool` with the discovered tool name to immediately activate it into your active turn.
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:
@@ -72,6 +73,15 @@
                 config:
                   maxRetrievalItems: 3
                   watchdogTimeoutMs: 15000
+                  recall:
+                    enabled: true
+                    similarityThreshold: 0.35
+                    maxItems: 3
+                    categories:
+                      - lesson
+                      - code
+                      - summary
+                      - asset
                   toolRouting:
                     enabled: true
                     maxDynamicTools: 6
@@ -88,6 +98,7 @@
                       - search_memory
                       - save_lesson
                       - inspect_multimodal
+                      - activate_tool
           - id: compaction
             name: cordis:group
             group: true

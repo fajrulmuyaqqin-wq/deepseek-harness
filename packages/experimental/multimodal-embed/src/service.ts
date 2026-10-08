@@ -218,9 +218,9 @@ export class MultimodalEmbeddingService extends Service implements MultimodalEmb
     queryVector: Float32Array,
     limit = this.config.maxRetrievalItems,
     threshold = this.config.similarityThreshold,
-    category?: string,
+    category?: MemoryCategory | MemoryCategory[],
   ): Promise<MemoryItem[]> {
-    return Promise.resolve(this.db.search(queryVector, limit, threshold, category as MemoryCategory))
+    return Promise.resolve(this.db.search(queryVector, limit, threshold, category))
   }
 
   teardown(): void {
@@ -230,7 +230,9 @@ export class MultimodalEmbeddingService extends Service implements MultimodalEmb
       this.pendingRequests.delete(id)
     }
     if (this.worker) {
-      this.worker.terminate().catch(() => {})
+      this.worker.terminate().catch((err: unknown) => {
+        this.ctx.logger.warn(`multimodal-embed worker terminate error: ${String(err)}`)
+      })
       this.worker = undefined
     }
     this.db.close()

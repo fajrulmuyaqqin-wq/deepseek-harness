@@ -12,37 +12,41 @@ import { MultimodalEmbeddingService } from './service.ts'
 import { createSearchMemoryTool } from './tools/search-memory.ts'
 import { createSaveLessonTool } from './tools/save-lesson.ts'
 import { createInspectMultimodalTool } from './tools/inspect-multimodal.ts'
+import { createActivateToolTool } from './tools/activate-tool.ts'
 import { registerToolRouterHook } from './hooks/on-assemble.ts'
 import { registerCompactionListener } from './hooks/on-compaction.ts'
 
 export * from './types.ts'
 export * from './config.ts'
 export * from './service.ts'
+export * from './tools/activate-tool.ts'
 
 export const name = 'multimodal-embed'
 export const inject = ['tools', 'systemPrompt']
 
 export function apply(ctx: Context, config: MultimodalEmbedConfig): void {
-  // 1. Fase 1 & 2: Register Global Service
+  // 1. Register Global Service
   const service = new MultimodalEmbeddingService(ctx, config)
 
-  // 2. Fase 3: Register Agent Tools (Zero-collision, defineTool)
+  // 2. Register Turn-Boundary Tool Router (Tool-RAG)
+  const activator = registerToolRouterHook(ctx, service, config)
+
+  // 3. Register Agent Tools (Zero-collision, defineTool)
   ctx.effect(() => {
     const unregisterSearch = ctx.tools.register(createSearchMemoryTool(service))
     const unregisterSave = ctx.tools.register(createSaveLessonTool(service))
     const unregisterInspect = ctx.tools.register(createInspectMultimodalTool(service))
+    const unregisterActivate = ctx.tools.register(createActivateToolTool(activator))
 
     return () => {
       unregisterSearch()
       unregisterSave()
       unregisterInspect()
+      unregisterActivate()
     }
   })
 
-  // 3. Fase 4: Register Turn-Boundary Tool Router (Tool-RAG)
-  registerToolRouterHook(ctx, service, config)
-
-  // 4. Fase 5: Register Symbiotic Compaction Listener
+  // 4. Register Symbiotic Compaction Listener
   registerCompactionListener(ctx, service, config)
 
   ctx.logger.info(

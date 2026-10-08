@@ -82,13 +82,26 @@ export class VectorDatabase {
     queryVector: Float32Array,
     limit = 5,
     threshold = 0.5,
-    category?: MemoryItem['category'],
+    category?: MemoryItem['category'] | MemoryItem['category'][],
   ): MemoryItem[] {
-    const query = category
-      ? this.db.prepare('SELECT id, category, content, vector, metadata, created_at FROM multimodal_memories WHERE category = ?')
-      : this.db.prepare('SELECT id, category, content, vector, metadata, created_at FROM multimodal_memories')
-
-    const rows = category ? query.all(category) : query.all()
+    let rows: unknown[]
+    if (Array.isArray(category) && category.length > 0) {
+      const placeholders = category.map(() => '?').join(', ')
+      const query = this.db.prepare(
+        `SELECT id, category, content, vector, metadata, created_at FROM multimodal_memories WHERE category IN (${placeholders})`,
+      )
+      rows = query.all(...category)
+    } else if (typeof category === 'string') {
+      const query = this.db.prepare(
+        'SELECT id, category, content, vector, metadata, created_at FROM multimodal_memories WHERE category = ?',
+      )
+      rows = query.all(category)
+    } else {
+      const query = this.db.prepare(
+        'SELECT id, category, content, vector, metadata, created_at FROM multimodal_memories',
+      )
+      rows = query.all()
+    }
     const results: MemoryItem[] = []
 
     for (const row of rows as unknown as MemoryRow[]) {

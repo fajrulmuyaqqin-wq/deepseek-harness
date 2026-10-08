@@ -262,6 +262,7 @@ describe('the shipped Web composition', () => {
       expect(names).toContain('search_memory')
       expect(names).toContain('save_lesson')
       expect(names).toContain('inspect_multimodal')
+      expect(names).toContain('activate_tool')
     } finally {
       await handle.dispose()
     }

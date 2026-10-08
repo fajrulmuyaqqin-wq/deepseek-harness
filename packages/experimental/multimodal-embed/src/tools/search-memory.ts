@@ -55,11 +55,15 @@ export function createSearchMemoryTool(service: MultimodalEmbedService) {
     },
     async execute(args, exec) {
       const vector = await service.embedText(args.query, exec.signal)
+      const category = (args.category === 'code' || args.category === 'lesson' || args.category === 'asset'
+        || args.category === 'summary' || args.category === 'catalog_tool' || args.category === 'catalog_skill')
+        ? args.category
+        : undefined
       const matches = await service.searchSimilar(
         vector,
         args.limit ?? 3,
         args.threshold,
-        args.category,
+        category,
       )
 
       return {

@@ -39,7 +39,12 @@ export interface MultimodalEmbedService {
   embedAudio(audioBuffer: Uint8Array, signal?: AbortSignal): Promise<AudioHintResult>
 
   /** Search similar memories in the local vector store with optional category filter. */
-  searchSimilar(vector: Float32Array, limit?: number, threshold?: number, category?: string): Promise<MemoryItem[]>
+  searchSimilar(
+    vector: Float32Array,
+    limit?: number,
+    threshold?: number,
+    category?: MemoryCategory | MemoryCategory[],
+  ): Promise<MemoryItem[]>
 
   /** Save a new memory entry to the vector store. */
   saveEntry(

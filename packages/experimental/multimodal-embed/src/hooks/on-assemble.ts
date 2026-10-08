@@ -1,43 +1,95 @@
 /**
- * Turn-Boundary Semantic Tool & Skill Router (Tool-RAG) (Fase 4).
+ * Turn-Boundary Semantic Tool & Skill Router (Tool-RAG) (Fase 4 & 5).
  * Hooks into system-prompt/assemble expert waterfall to dynamically prune unused tools and skills,
- * saving ~80% input tokens while preserving LLM prefix caching.
+ * saving ~80% input tokens while preserving LLM prefix caching and per-session isolation.
  *
  * @module @deepseek-ai/dsh-experimental-multimodal-embed/hooks/on-assemble
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { PromptAssembly, AssembleContext } from '@deepseek-ai/dsh-system-prompt'
-import type { MultimodalEmbedService } from '../types.ts'
+import type { MultimodalEmbedService, MemoryCategory } from '../types.ts'
 import type { MultimodalEmbedConfig } from '../config.ts'
+import type { ToolActivator } from '../tools/activate-tool.ts'
 
 type ToolSchema = PromptAssembly['tools'][number]
+
+interface SessionState {
+  readonly stickyTools: Set<string>
+  readonly currentTurnExecutedTools: Set<string>
+  readonly dynamicallyActivatedTools: Set<string>
+  turnLock?: { key: string; activeToolNames: Set<string> } | undefined
+}
 
 export function registerToolRouterHook(
   ctx: Context,
   service: MultimodalEmbedService,
   config: MultimodalEmbedConfig,
-): void {
-  if (!config.toolRouting.enabled) return
-
+): ToolActivator {
   const coreToolsSet = new Set(config.toolRouting.coreTools)
-  // Ensure memory tools are always part of core tools
+  // Ensure essential tools are always part of core tools
   coreToolsSet.add('search_memory')
   coreToolsSet.add('save_lesson')
+  coreToolsSet.add('activate_tool')
 
   // Cache for tool vector representations
   const toolVectorCache = new Map<string, Float32Array>()
 
-  // Turn-boundary lock cache: Map<ScopeKey | 'global', { key: string; activeToolNames: Set<string> }>
-  type ScopeKey = AssembleContext['scope']
-  const turnLockCache = new Map<ScopeKey | 'global', { key: string; activeToolNames: Set<string> }>()
+  // All known tools seen across assemblies
+  const allKnownTools = new Set<string>()
 
-  // Sticky tools from previous turn
-  const stickyTools = new Set<string>()
-  // Tools executed in the current turn
-  const currentTurnExecutedTools = new Set<string>()
+  // Per-session router state map: Map<sessionId, SessionState>
+  const sessionStates = new Map<string, SessionState>()
+  let lastActiveSessionId: string | undefined
+
+  function getOrCreateSessionState(sessionId: string): SessionState {
+    let state = sessionStates.get(sessionId)
+    if (!state) {
+      state = {
+        stickyTools: new Set<string>(),
+        currentTurnExecutedTools: new Set<string>(),
+        dynamicallyActivatedTools: new Set<string>(),
+      }
+      sessionStates.set(sessionId, state)
+    }
+    return state
+  }
+
   // Set of indexed catalog entries
   const indexedCatalog = new Set<string>()
+
+  const activator: ToolActivator = {
+    activateTool(toolNames: string[], sessionId?: string): Promise<{ activated: string[]; notFound: string[] }> {
+      const targetSid = sessionId ?? lastActiveSessionId
+      const state = targetSid ? getOrCreateSessionState(targetSid) : undefined
+      const activated: string[] = []
+      const notFound: string[] = []
+
+      for (const name of toolNames) {
+        if (allKnownTools.has(name) || coreToolsSet.has(name)) {
+          if (state) {
+            state.dynamicallyActivatedTools.add(name)
+            state.stickyTools.add(name)
+            if (state.turnLock) {
+              state.turnLock.activeToolNames.add(name)
+            }
+          }
+          activated.push(name)
+        } else {
+          notFound.push(name)
+        }
+      }
+
+      return Promise.resolve({ activated, notFound })
+    },
+    getAvailableCatalogTools(): string[] {
+      return Array.from(allKnownTools.values())
+    },
+  }
+
+  if (!config.toolRouting.enabled) {
+    return activator
+  }
 
   ctx.on('system-prompt/assemble', async (
     assembly: PromptAssembly,
@@ -45,16 +97,22 @@ export function registerToolRouterHook(
     next: () => Promise<PromptAssembly>,
   ): Promise<PromptAssembly> => {
     try {
+      const sessionId = context.agent?.session.id ? String(context.agent.session.id) : undefined
+      if (sessionId) {
+        lastActiveSessionId = sessionId
+      }
+
       // Extract turn intent from variables or context
       const intentText = assembly.variables.userPrompt ?? assembly.variables.topic ?? ''
 
-      // 1. Passive RAG: Auto-inject top-3 relevant memories if confidence > threshold (calibrated to 0.35)
-      if (intentText.trim().length > 0) {
+      // 1. Passive RAG: Auto-inject relevant memories if confidence > recall.similarityThreshold
+      if (config.recall.enabled && intentText.trim().length > 0) {
         try {
           const intentVec = await service.embedText(intentText)
-          const recallThreshold = config.toolRouting.similarityThreshold
-          const maxMemories = config.maxRetrievalItems
-          const memories = await service.searchSimilar(intentVec, maxMemories, recallThreshold)
+          const recallThreshold = config.recall.similarityThreshold
+          const maxMemories = config.recall.maxItems
+          const eligibleCategories = config.recall.categories as MemoryCategory[]
+          const memories = await service.searchSimilar(intentVec, maxMemories, recallThreshold, eligibleCategories)
 
           if (memories.length > 0) {
             const memoryText = [
@@ -77,17 +135,44 @@ export function registerToolRouterHook(
       }
 
       const allTools = assembly.tools
+      for (const t of allTools) {
+        allKnownTools.add(t.name)
+      }
+
+      // Index available skills into catalog_skill if skills service is available
+      const skillsService = ctx.get('skills') as {
+        list?: (scope?: unknown) => Promise<Array<{ name: string; description?: string }>> | Array<{ name: string; description?: string }>
+      } | undefined
+      if (skillsService && typeof skillsService.list === 'function') {
+        try {
+          const skills = await Promise.resolve(skillsService.list(context.scope))
+          if (Array.isArray(skills)) {
+            for (const skill of skills) {
+              const skillId = `skill_${skill.name}`
+              if (!indexedCatalog.has(skillId)) {
+                indexedCatalog.add(skillId)
+                const doc = `[SKILL: ${skill.name}]\nDescription: ${skill.description ?? ''}`
+                service.saveEntry('catalog_skill', doc, { skillName: skill.name }, skillId).catch((err: unknown) => {
+                  ctx.logger.warn(`multimodal-embed: failed to index catalog skill ${skill.name}: ${String(err)}`)
+                })
+              }
+            }
+          }
+        } catch (err: unknown) {
+          ctx.logger.warn(`multimodal-embed: skills list query failed: ${String(err)}`)
+        }
+      }
+
+      const sessionState = sessionId ? getOrCreateSessionState(sessionId) : undefined
+
       if (allTools.length <= config.toolRouting.maxDynamicTools + coreToolsSet.size) {
         // Tool count already small, no pruning needed
         return await next()
       }
 
-      // Check Turn-Boundary Lock
-      const scopeKey = context.scope ?? 'global'
-      const lock = turnLockCache.get(scopeKey)
-
-      if (config.toolRouting.policy === 'turn-boundary' && lock) {
-        // Reuse locked active tools for subsequent steps in this turn
+      // Check Turn-Boundary Lock for this specific session
+      if (config.toolRouting.policy === 'turn-boundary' && sessionState?.turnLock) {
+        const lock = sessionState.turnLock
         const filtered = allTools.filter(t => lock.activeToolNames.has(t.name))
         assembly.tools = filtered
         return await next()
@@ -103,10 +188,13 @@ export function registerToolRouterHook(
       const stickyActiveTools: ToolSchema[] = []
       const candidateTools: ToolSchema[] = []
 
+      const stickySet = sessionState?.stickyTools ?? new Set<string>()
+      const activatedSet = sessionState?.dynamicallyActivatedTools ?? new Set<string>()
+
       for (const tool of allTools) {
         if (coreToolsSet.has(tool.name)) {
           coreTools.push(tool)
-        } else if (stickyTools.has(tool.name)) {
+        } else if (stickySet.has(tool.name) || activatedSet.has(tool.name)) {
           stickyActiveTools.push(tool)
         } else {
           candidateTools.push(tool)
@@ -131,7 +219,9 @@ export function registerToolRouterHook(
         if (!indexedCatalog.has(`tool_${tool.name}`)) {
           indexedCatalog.add(`tool_${tool.name}`)
           const toolDoc = `[TOOL: ${tool.name}]\nDescription: ${tool.description}`
-          service.saveEntry('catalog_tool', toolDoc, { toolName: tool.name }, `tool_${tool.name}`).catch(() => {})
+          service.saveEntry('catalog_tool', toolDoc, { toolName: tool.name }, `tool_${tool.name}`).catch((err: unknown) => {
+            ctx.logger.warn(`multimodal-embed: failed to index catalog tool ${tool.name}: ${String(err)}`)
+          })
         }
 
         const score = service.cosineSimilarity(intentVector, toolVec)
@@ -152,8 +242,10 @@ export function registerToolRouterHook(
       const activeTools = [...coreTools, ...stickyActiveTools, ...selectedDynamicTools]
       const activeNames = new Set(activeTools.map(t => t.name))
 
-      // Lock for this turn boundary
-      turnLockCache.set(scopeKey, { key: intentText.slice(0, 30), activeToolNames: activeNames })
+      // Lock for this session's turn boundary
+      if (sessionState) {
+        sessionState.turnLock = { key: intentText.slice(0, 30), activeToolNames: activeNames }
+      }
 
       assembly.tools = activeTools
     } catch (err: unknown) {
@@ -164,20 +256,35 @@ export function registerToolRouterHook(
     return await next()
   })
 
-  // Track executed tools during turn and update sticky set upon turn completion
-  ctx.on('session/event', (_session, event) => {
+  // Track executed tools per session and update sticky set upon turn completion
+  ctx.on('session/event', (session, event) => {
+    const sid = String(session.id)
+    lastActiveSessionId = sid
+    const state = sessionStates.get(sid)
+    if (!state) return
+
     if (event.type === 'tool/call') {
       const toolName = event.data.name
       if (typeof toolName === 'string') {
-        currentTurnExecutedTools.add(toolName)
+        state.currentTurnExecutedTools.add(toolName)
       }
     } else if (event.type === 'turn/end') {
-      turnLockCache.clear()
-      stickyTools.clear()
-      for (const name of currentTurnExecutedTools) {
-        stickyTools.add(name)
+      state.turnLock = undefined
+      state.stickyTools.clear()
+      for (const name of state.currentTurnExecutedTools) {
+        state.stickyTools.add(name)
       }
-      currentTurnExecutedTools.clear()
+      for (const name of state.dynamicallyActivatedTools) {
+        state.stickyTools.add(name)
+      }
+      state.currentTurnExecutedTools.clear()
     }
   })
+
+  // Clean up session state on session disposal
+  ctx.on('session/disposed', (session) => {
+    sessionStates.delete(String(session.id))
+  })
+
+  return activator
 }
