@@ -60,9 +60,3 @@ export interface MultimodalEmbedService {
   /** Calculate cosine similarity between two 768-D vectors. */
   cosineSimilarity(a: Float32Array, b: Float32Array): number
 }
-
-declare module '@deepseek-ai/cordis' {
-  interface Context {
-    multimodalEmbed: MultimodalEmbedService
-  }
-}

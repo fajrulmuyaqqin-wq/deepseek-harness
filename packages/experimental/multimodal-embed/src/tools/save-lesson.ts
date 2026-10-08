@@ -6,6 +6,7 @@
 
 import type { MultimodalEmbedService } from '../types.ts'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { normalizeRuleText } from '../directive-sniffer.ts'
 
 export function createSaveLessonTool(service: MultimodalEmbedService) {
   return defineTool({
@@ -37,6 +38,15 @@ export function createSaveLessonTool(service: MultimodalEmbedService) {
     async execute(args) {
       const category = args.category === 'code' || args.category === 'asset' ? args.category : 'lesson'
       const content = `[${args.topic}]\n${args.lesson}`
+
+      const existingLessons = await service.getEntriesByCategory(category, 50).catch(() => [])
+      const normContent = normalizeRuleText(content)
+      for (const existing of existingLessons) {
+        if (normalizeRuleText(existing.content) === normContent) {
+          return { id: existing.id, ok: true, topic: args.topic }
+        }
+      }
+
       const id = await service.saveEntry(category, content, {
         topic: args.topic,
       })

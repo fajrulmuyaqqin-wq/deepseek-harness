@@ -10,12 +10,13 @@ import { readFile } from 'node:fs/promises'
 import { extname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PromptAssembly, AssembleContext } from '@deepseek-ai/dsh-system-prompt'
-import type { PostToolDecision } from '@deepseek-ai/dsh-tools'
-import type { UserMessage } from '@deepseek-ai/dsh-session'
+import type { PostToolDecision, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
+import type { UserMessage, Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { MultimodalEmbedService, MemoryCategory } from '../types.ts'
 import type { MultimodalEmbedConfig } from '../config.ts'
 import type { ToolActivator } from '../tools/activate-tool.ts'
+import { autoSniffAndSaveDirective } from '../directive-sniffer.ts'
 
 type ToolSchema = PromptAssembly['tools'][number]
 
@@ -120,6 +121,13 @@ export function registerToolRouterHook(
       if (intentText.trim().length === 0 && sessionState?.latestUserMessage) {
         intentText = sessionState.latestUserMessage.text
         incomingSourceKind = sessionState.latestUserMessage.sourceKind
+      }
+
+      // Auto-sniff explicit directives from intentText before querying active rules
+      if (config.autoCaptureDirectives && intentText.trim().length > 0) {
+        await autoSniffAndSaveDirective(service, intentText, ctx.logger).catch((err: unknown) => {
+          ctx.logger.debug(`multimodal directive auto-capture deferred: ${String(err)}`)
+        })
       }
 
       // 0. Active Project Rules & Guidelines (Directives Domain)
@@ -384,7 +392,7 @@ export function registerToolRouterHook(
   })
 
   // Track executed tools per session and update sticky set upon turn completion
-  ctx.on('session/event', (session, event) => {
+  ctx.on('session/event', (session: Session, event: SessionEvent) => {
     const sid = String(session.id)
     lastActiveSessionId = sid
     const state = sessionStates.get(sid)
@@ -417,11 +425,14 @@ export function registerToolRouterHook(
         text,
         ...sourceKind !== undefined ? { sourceKind } : {},
       }
+      if (config.autoCaptureDirectives && text.trim().length > 0) {
+        void autoSniffAndSaveDirective(service, text, ctx.logger)
+      }
     }
   })
 
   // Auto-recovery for catalog tools and anti-loop consecutive error guard
-  ctx.on('tools/post-execute', async (exec, result, next): Promise<PostToolDecision> => {
+  ctx.on('tools/post-execute', async (exec: ToolExecution, result: Readonly<ToolExecutionResult>, next: () => Promise<PostToolDecision>): Promise<PostToolDecision> => {
     const sid = exec.agent?.session.id ? String(exec.agent.session.id) : lastActiveSessionId
     const state = sid ? getOrCreateSessionState(sid) : undefined
 
@@ -439,7 +450,8 @@ export function registerToolRouterHook(
     if (result.isError && exec.name === 'read_image') {
       const errText = result.content.map(c => c.type === 'text' ? c.text : '').join(' ')
       if (errText.includes('does not declare image input') || errText.includes('cannot read')) {
-        const filePath = (exec.arguments as { file_path?: string }).file_path
+        const args = (exec.arguments ?? {}) as { file_path?: string }
+        const filePath = args.file_path
         if (filePath && existsSync(filePath)) {
           try {
             const buffer = await readFile(filePath)
@@ -463,7 +475,7 @@ export function registerToolRouterHook(
       }
     }
 
-    const downstream = await next()
+    const downstream: PostToolDecision = await next()
 
     const additionalContexts: UserMessage[] = [...(downstream.additionalContexts ?? [])]
 
@@ -502,7 +514,7 @@ export function registerToolRouterHook(
   })
 
   // Clean up session state on session disposal
-  ctx.on('session/disposed', (session) => {
+  ctx.on('session/disposed', (session: Session) => {
     sessionStates.delete(String(session.id))
   })
 

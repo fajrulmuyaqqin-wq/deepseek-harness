@@ -9,6 +9,12 @@
   ],
   "references": [
     {
+      "path": "../../../vendor/cosmokit"
+    },
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
       "path": "../../core/agent"
     },
     {
@@ -28,9 +34,6 @@
     },
     {
       "path": "../../../vendor/schemastery"
-    },
-    {
-      "path": "../../../vendor/cordis"
     }
   ]
 }

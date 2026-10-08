@@ -10,6 +10,9 @@ import { MultimodalEmbeddingService } from '../src/service.ts'
 import { Config } from '../src/config.ts'
 import { registerToolRouterHook } from '../src/hooks/on-assemble.ts'
 import { createSaveRuleTool, type SaveRuleResult } from '../src/tools/save-rule.ts'
+import { createSaveLessonTool } from '../src/tools/save-lesson.ts'
+import { extractDirectiveCandidate } from '../src/directive-sniffer.ts'
+import { distillCompactedSummary, registerCompactionListener } from '../src/hooks/on-compaction.ts'
 
 describe('Turn-Boundary Tool-RAG & Passive Memory Recall (on-assemble)', () => {
   it('auto-injects high confidence long-term memories (> 0.65) into assembly sections', async () => {
@@ -500,6 +503,189 @@ describe('Turn-Boundary Tool-RAG & Passive Memory Recall (on-assemble)', () => {
     expect(schedSection).toBeDefined()
     expect(schedSection?.text).toContain('## Scheduled Check-in Event (Interval Trigger)')
     expect(schedSection?.text).toContain('Cek kesehatan port 3080 dan memory leak')
+
+    service.teardown()
+  })
+
+  it('extractDirectiveCandidate detects Indonesian and English directives and rejects noise/questions', () => {
+    // Valid Indonesian directives
+    const idRule1 = extractDirectiveCandidate('aturan kita: target branch selalu development')
+    expect(idRule1).toBeDefined()
+    expect(idRule1?.rule).toContain('target branch selalu development')
+    expect(idRule1?.scope).toBe('workflow')
+
+    const idRule2 = extractDirectiveCandidate('ingat ya, jangan pernah push ke master')
+    expect(idRule2).toBeDefined()
+    expect(idRule2?.rule.toLowerCase()).toContain('jangan pernah push ke master')
+    expect(idRule2?.scope).toBe('workflow')
+
+    const idRule3 = extractDirectiveCandidate('wajib jalankan oxlint sebelum commit')
+    expect(idRule3).toBeDefined()
+    expect(idRule3?.rule.toLowerCase()).toContain('jalankan oxlint sebelum commit')
+    expect(idRule3?.scope).toBe('project')
+
+    // Valid English directives
+    const enRule1 = extractDirectiveCandidate('rule: always use development branch')
+    expect(enRule1).toBeDefined()
+    expect(enRule1?.rule).toContain('always use development branch')
+    expect(enRule1?.scope).toBe('workflow')
+
+    const enRule2 = extractDirectiveCandidate('remember to never push to main')
+    expect(enRule2).toBeDefined()
+    expect(enRule2?.rule).toContain('never push to main')
+    expect(enRule2?.scope).toBe('workflow')
+
+    // Rejected questions & noise
+    expect(extractDirectiveCandidate('apakah kita harus push ke master?')).toBeUndefined()
+    expect(extractDirectiveCandidate('why did this command fail?')).toBeUndefined()
+    expect(extractDirectiveCandidate('baca file packages/core/src/index.ts')).toBeUndefined()
+    expect(extractDirectiveCandidate('lanjut')).toBeUndefined()
+    expect(extractDirectiveCandidate('ok')).toBeUndefined()
+  })
+
+  it('auto-sniffs explicit user directives and immediately injects them into active project rules during assemble', async () => {
+    const ctx = new Context()
+    const service = new MultimodalEmbeddingService(ctx, Config({}))
+    ctx.set('multimodalEmbed', service)
+
+    registerToolRouterHook(ctx, service, Config({
+      autoCaptureDirectives: true,
+    }))
+
+    const assembly: PromptAssembly = {
+      sections: [],
+      contexts: [],
+      tools: [],
+      variables: {
+        userPrompt: 'aturan kita: target branch selalu development, jangan push ke master',
+      },
+    }
+
+    await ctx.parallel('system-prompt/assemble', assembly, {}, async () => assembly)
+
+    // Verify the directive was automatically sniffed, saved, and injected on the very same assemble turn
+    const rulesSection = assembly.sections.find(s => s.name === 'active-project-rules')
+    expect(rulesSection).toBeDefined()
+    expect(rulesSection?.text).toContain('## Active Project Rules & Guidelines')
+    expect(rulesSection?.text).toContain('[WORKFLOW] target branch selalu development, jangan push ke master')
+
+    // Verify it is persisted in the database
+    const savedRules = await service.getEntriesByCategory('rule', 10)
+    expect(savedRules.length).toBeGreaterThan(0)
+    expect(savedRules[0]?.content).toContain('target branch selalu development')
+
+    service.teardown()
+  })
+
+  it('deduplicates direct save_rule and save_lesson tool invocations', async () => {
+    const ctx = new Context()
+    const service = new MultimodalEmbeddingService(ctx, Config({}))
+
+    const saveRuleTool = createSaveRuleTool(service)
+    const saveLessonTool = createSaveLessonTool(service)
+
+    // Save rule once
+    const resRule1 = (await saveRuleTool.execute({ rule: 'Target git branch selalu development', scope: 'workflow' }, {} as never)) as { ok: boolean; id: string }
+    expect(resRule1.ok).toBe(true)
+
+    // Save identical rule again -> should return existing id without duplicate insertion
+    const resRule2 = (await saveRuleTool.execute({ rule: 'Target git branch selalu development', scope: 'workflow' }, {} as never)) as { ok: boolean; id: string }
+    expect(resRule2.ok).toBe(true)
+    expect(resRule2.id).toBe(resRule1.id)
+
+    const rules = await service.getEntriesByCategory('rule', 10)
+    expect(rules.length).toBe(1)
+
+    // Save lesson once
+    const resLesson1 = (await saveLessonTool.execute({ topic: 'SQLite WAL', lesson: 'WAL mode enables high concurrency' }, {} as never)) as { ok: boolean; id: string }
+    expect(resLesson1.ok).toBe(true)
+
+    // Save identical lesson again -> should return existing id without duplicate insertion
+    const resLesson2 = (await saveLessonTool.execute({ topic: 'SQLite WAL', lesson: 'WAL mode enables high concurrency' }, {} as never)) as { ok: boolean; id: string }
+    expect(resLesson2.ok).toBe(true)
+    expect(resLesson2.id).toBe(resLesson1.id)
+
+    const lessons = await service.getEntriesByCategory('lesson', 10)
+    expect(lessons.length).toBe(1)
+
+    service.teardown()
+  })
+
+  it('distills lessons and operational rules from compacted summary sections', async () => {
+    const sampleSummary = [
+      '## Primary Request and Intent',
+      '- Implement long-running reactive pipeline',
+      '',
+      '## Key Technical Concepts',
+      '- Cordis expert waterfalls and declaration merging for extensible agent composition',
+      '',
+      '## Files and Code',
+      '- packages/experimental/multimodal-embed/src/index.ts: registered tools',
+      '',
+      '## Errors and Fixes',
+      '- TypeError on exactOptionalPropertyTypes: resolved using conditional spread ...val !== undefined ? { val } : {}',
+      '',
+      '## Critical Context',
+      '- Operational constraint: Target git branch must always remain development; never push directly to master',
+      '- Architecture decision: Native node:sqlite with WAL mode avoids external binary dependencies',
+    ].join('\n')
+
+    const distilled = distillCompactedSummary(sampleSummary, 'compaction-test-42')
+
+    // Expect: 1 from Errors and Fixes (lesson), 1 from Key Technical Concepts (lesson),
+    // 1 constraint from Critical Context (rule), 1 decision from Critical Context (lesson)
+    const lessons = distilled.filter(d => d.category === 'lesson')
+    const rules = distilled.filter(d => d.category === 'rule')
+
+    expect(lessons.length).toBeGreaterThanOrEqual(2)
+    expect(rules.length).toBeGreaterThanOrEqual(1)
+
+    // Validate distilled bugfix
+    const bugfix = lessons.find(l => l.content.includes('exactOptionalPropertyTypes'))
+    expect(bugfix).toBeDefined()
+    expect(bugfix?.content).toContain('[COMPACTED BUGFIX]')
+    expect(bugfix?.metadata.compactionId).toBe('compaction-test-42')
+
+    // Validate distilled rule
+    const rule = rules.find(r => r.content.includes('Target git branch must always remain development'))
+    expect(rule).toBeDefined()
+    expect(rule?.content).toContain('[PROJECT]')
+
+    // Test registerCompactionListener captures and persists both summary and distilled items
+    const ctx = new Context()
+    const service = new MultimodalEmbeddingService(ctx, Config({}))
+
+    registerCompactionListener(ctx, service, Config({
+      autoCaptureCompacted: true,
+      autoDistillLessonsFromCompaction: true,
+    }))
+
+    const fakeSession = { id: 'test-session-compact' }
+    const fakeEvent = {
+      type: 'compaction/summary',
+      data: {
+        compactionId: 'compaction-event-1',
+        summary: [{ type: 'text', text: sampleSummary }],
+        shadowedTokenCount: 1500,
+      },
+    }
+
+    await ctx.parallel('session/event', fakeSession as never, fakeEvent as never)
+
+    // Wait a brief tick for async handler to settle
+    await new Promise(r => setTimeout(r, 100))
+
+    const storedSummaries = await service.getEntriesByCategory('summary', 10)
+    expect(storedSummaries.length).toBe(1)
+    expect(storedSummaries[0]?.metadata?.compactionId).toBe('compaction-event-1')
+
+    const storedLessons = await service.getEntriesByCategory('lesson', 10)
+    expect(storedLessons.length).toBeGreaterThan(0)
+    expect(storedLessons.some(l => l.content.includes('exactOptionalPropertyTypes'))).toBe(true)
+
+    const storedRules = await service.getEntriesByCategory('rule', 10)
+    expect(storedRules.length).toBeGreaterThan(0)
+    expect(storedRules.some(r => r.content.includes('development'))).toBe(true)
 
     service.teardown()
   })

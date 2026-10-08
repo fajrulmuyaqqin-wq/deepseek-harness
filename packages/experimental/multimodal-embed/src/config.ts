@@ -33,6 +33,8 @@ export interface MultimodalEmbedConfig {
   similarityThreshold: number
   maxRetrievalItems: number
   autoCaptureCompacted: boolean
+  autoCaptureDirectives: boolean
+  autoDistillLessonsFromCompaction: boolean
   recall: MemoryRecallConfig
   toolRouting: ToolRoutingConfig
 }
@@ -79,6 +81,10 @@ export const Config: z<Partial<MultimodalEmbedConfig>, MultimodalEmbedConfig> = 
     .description('Maximum memory items returned per query'),
   autoCaptureCompacted: z.boolean().default(true)
     .description('Automatically capture summaries pruned by compaction-basic into vector store'),
+  autoCaptureDirectives: z.boolean().default(true)
+    .description('Automatically sniff and capture explicit user directives and project rules into vector store'),
+  autoDistillLessonsFromCompaction: z.boolean().default(true)
+    .description('Automatically distill bugfixes, technical lessons, and constraints from compacted checkpoint sections into vector store'),
   recall: memoryRecallSchema.default({
     enabled: true,
     similarityThreshold: 0.35,

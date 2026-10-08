@@ -7,6 +7,7 @@
 
 import type { MultimodalEmbedService } from '../types.ts'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { isDuplicateRule } from '../directive-sniffer.ts'
 
 export interface SaveRuleResult {
   id: string
@@ -44,6 +45,13 @@ export function createSaveRuleTool(service: MultimodalEmbedService) {
     },
     async execute(args) {
       const scope = args.scope ?? 'workflow'
+      const existingRules = await service.getEntriesByCategory('rule', 50).catch(() => [])
+      for (const existing of existingRules) {
+        if (isDuplicateRule([existing], args.rule)) {
+          return { id: existing.id, ok: true, rule: args.rule }
+        }
+      }
+
       const content = `[${scope.toUpperCase()}] ${args.rule}`
       const id = await service.saveEntry('rule', content, {
         scope,

@@ -23,6 +23,14 @@ export * from './service.ts'
 export * from './tools/activate-tool.ts'
 export * from './tools/save-rule.ts'
 export * from './tools/save-lesson.ts'
+export * from './directive-sniffer.ts'
+export * from './hooks/on-compaction.ts'
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    multimodalEmbed: MultimodalEmbeddingService
+  }
+}
 
 export const name = 'multimodal-embed'
 export const inject = ['tools', 'systemPrompt']
