@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import { writeFileSync, unlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import type { ToolExecutionFailure, ToolExecutionSuccess } from '@deepseek-ai/dsh-tools'
@@ -308,5 +311,80 @@ describe('Turn-Boundary Tool-RAG & Passive Memory Recall (on-assemble)', () => {
     expect(d4.additionalContexts?.some(c => c.content.some(b => b.type === 'text' && b.text.includes('[Anti-Loop Warning]')))).toBeFalsy()
 
     service.teardown()
+  })
+
+  it('sniffs referenced media paths and injects sensory preview into assemble sections', async () => {
+    const ctx = new Context()
+    const service = new MultimodalEmbeddingService(ctx, Config({}))
+    ctx.set('multimodalEmbed', service)
+
+    registerToolRouterHook(ctx, service, Config({}))
+
+    const tempImagePath = join(tmpdir(), `test_sniff_${Date.now()}.png`)
+    // Write valid minimal PNG bytes (8 bytes header + chunks)
+    const pngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52])
+    writeFileSync(tempImagePath, pngHeader)
+
+    try {
+      const assembly: PromptAssembly = {
+        sections: [],
+        contexts: [],
+        tools: [],
+        variables: {
+          userPrompt: `Tolong periksa diagram arsitektur di ${tempImagePath}`,
+        },
+      }
+
+      await ctx.parallel('system-prompt/assemble', assembly, {}, async () => assembly)
+
+      const snifferSection = assembly.sections.find(s => s.name === 'multimodal-sensory-sniffer')
+      expect(snifferSection).toBeDefined()
+      expect(snifferSection?.text).toContain('## Sensory Preview (Multimodal Sniffer)')
+      expect(snifferSection?.text).toContain(`[IMAGE: ${tempImagePath}]`)
+    } finally {
+      unlinkSync(tempImagePath)
+      service.teardown()
+    }
+  })
+
+  it('protects non-vision model by injecting sensory fallback on read_image failure', async () => {
+    const ctx = new Context()
+    const service = new MultimodalEmbeddingService(ctx, Config({}))
+    ctx.set('multimodalEmbed', service)
+
+    registerToolRouterHook(ctx, service, Config({}))
+
+    const tempImagePath = join(tmpdir(), `test_fallback_${Date.now()}.png`)
+    const pngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52])
+    writeFileSync(tempImagePath, pngHeader)
+
+    try {
+      const exec = {
+        name: 'read_image',
+        arguments: { file_path: tempImagePath },
+        agent: { session: { id: 'session-vision-fallback' } },
+      } as never
+
+      const errResult: ToolExecutionFailure = {
+        isError: true,
+        error: { message: 'cannot read: model does not declare image input' },
+        content: [{ type: 'text', text: 'cannot read: model does not declare image input' }],
+      }
+
+      const decision = await ctx.waterfall(
+        'tools/post-execute',
+        exec,
+        errResult,
+        async () => ({ kind: 'accept' as const }),
+      )
+
+      expect(decision.additionalContexts).toBeDefined()
+      expect(decision.additionalContexts?.some(ctxMsg =>
+        ctxMsg.content.some(c => c.type === 'text' && c.text.includes('[Non-Vision Fallback Protector]')),
+      )).toBe(true)
+    } finally {
+      unlinkSync(tempImagePath)
+      service.teardown()
+    }
   })
 })

@@ -5,7 +5,9 @@
  *
  * @module @deepseek-ai/dsh-experimental-multimodal-embed/hooks/on-assemble
  */
-
+import { existsSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
+import { extname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PromptAssembly, AssembleContext } from '@deepseek-ai/dsh-system-prompt'
 import type { PostToolDecision } from '@deepseek-ai/dsh-tools'
@@ -136,6 +138,40 @@ export function registerToolRouterHook(
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err)
           ctx.logger.warn(`multimodal memory passive recall failed: ${msg}`)
+        }
+      }
+
+      // 2. Multimodal Sensory Sniffer (Pre-embed referenced media for instant sensory preview)
+      if (intentText.trim().length > 0) {
+        const sensoryMediaRegex = /(?:^|[\s"'(])([\w\-./\\]+\.(png|jpe?g|webp|gif|wav|mp3|ogg|m4a))\b/gi
+        const mediaMatches = Array.from(intentText.matchAll(sensoryMediaRegex))
+        if (mediaMatches.length > 0) {
+          const sensoryHints: string[] = []
+          for (const match of mediaMatches.slice(0, 3)) {
+            const mediaPath = match[1]
+            if (mediaPath && existsSync(mediaPath)) {
+              try {
+                const buffer = await readFile(mediaPath)
+                const ext = extname(mediaPath).toLowerCase()
+                if (['.wav', '.mp3', '.ogg', '.m4a'].includes(ext)) {
+                  const audio = await service.embedAudio(buffer)
+                  sensoryHints.push(`• [AUDIO: ${mediaPath}] (${audio.durationSec}s) Acoustic intent: ${audio.intentHint}`)
+                } else {
+                  const image = await service.embedImage(buffer)
+                  sensoryHints.push(`• [IMAGE: ${mediaPath}] (${image.width}x${image.height}) Sensory hints: ${image.semanticHints.join(', ')}`)
+                }
+              } catch (err: unknown) {
+                ctx.logger.debug(`multimodal sniffer: failed to parse ${mediaPath}: ${String(err)}`)
+              }
+            }
+          }
+          if (sensoryHints.length > 0) {
+            assembly.sections.push({
+              name: 'multimodal-sensory-sniffer',
+              text: '## Sensory Preview (Multimodal Sniffer)\n' + sensoryHints.join('\n'),
+              interpolate: false,
+            })
+          }
         }
       }
 
@@ -297,8 +333,30 @@ export function registerToolRouterHook(
     let autoRecoveryNotice: string | undefined
     if (result.isError && (allKnownTools.has(exec.name) || indexedCatalog.has(`tool_${exec.name}`))) {
       if (sid) {
-        await activator.activateTool([exec.name], sid).catch(() => {})
+        await activator.activateTool([exec.name], sid).catch((err: unknown) => {
+          ctx.logger.warn(`multimodal-embed: auto-recovery activate failed: ${String(err)}`)
+        })
         autoRecoveryNotice = `[Tool Catalog Auto-Recovery] Tool "${exec.name}" has been automatically activated for your session. You can now invoke it with valid arguments.`
+      }
+    }
+
+    let nonVisionFallbackNotice: string | undefined
+    if (result.isError && exec.name === 'read_image') {
+      const errText = result.content.map(c => c.type === 'text' ? c.text : '').join(' ')
+      if (errText.includes('does not declare image input') || errText.includes('cannot read')) {
+        const filePath = (exec.arguments as { file_path?: string }).file_path
+        if (filePath && existsSync(filePath)) {
+          try {
+            const buffer = await readFile(filePath)
+            const image = await service.embedImage(buffer)
+            nonVisionFallbackNotice = `[Non-Vision Fallback Protector] Current model lacks direct vision decoding. Sensory analysis for "${filePath}":\n` +
+              `• Dimensions: ${image.width}x${image.height}\n` +
+              `• Visual characteristics: ${image.semanticHints.join(', ')}\n` +
+              `You can also invoke inspect_multimodal({ path: "${filePath}" }) for further details.`
+          } catch (err: unknown) {
+            ctx.logger.warn(`multimodal-embed: vision fallback failed for ${filePath}: ${String(err)}`)
+          }
+        }
       }
     }
 
@@ -318,6 +376,13 @@ export function registerToolRouterHook(
       additionalContexts.push(createUserMessage({
         content: [{ type: 'text', text: autoRecoveryNotice }],
         source: { kind: 'repeat-tool-reminder' as never, form: 'notice', summary: `auto-activated: ${exec.name}` },
+      }))
+    }
+
+    if (nonVisionFallbackNotice) {
+      additionalContexts.push(createUserMessage({
+        content: [{ type: 'text', text: nonVisionFallbackNotice }],
+        source: { kind: 'repeat-tool-reminder' as never, form: 'notice', summary: `vision-fallback: ${exec.name}` },
       }))
     }
 

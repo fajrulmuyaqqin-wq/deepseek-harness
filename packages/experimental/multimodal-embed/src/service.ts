@@ -77,10 +77,11 @@ export class MultimodalEmbeddingService extends Service implements MultimodalEmb
         kind: 'configure',
         threads: this.config.maxCpuThreads,
         modelPath: this.config.modelPath,
-      }).catch(() => {
-        // Ignored during startup handshake
+      }).catch((handshakeError: unknown) => {
+        this.ctx.logger.warn(`multimodal-embed: startup configure handshake deferred: ${String(handshakeError)}`)
       })
-    } catch {
+    } catch (spawnError: unknown) {
+      this.ctx.logger.warn(`multimodal-embed: worker spawn failed: ${String(spawnError)}`)
       this.worker = undefined
     }
   }
