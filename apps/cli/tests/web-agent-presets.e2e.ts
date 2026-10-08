@@ -263,6 +263,11 @@ describe('the shipped Web composition', () => {
       expect(names).toContain('save_lesson')
       expect(names).toContain('inspect_multimodal')
       expect(names).toContain('activate_tool')
+      const compositions = ctx.agentPresets.inspectCompositions(handle.agent.ctx)
+      expect(compositions).toHaveLength(1)
+      const focusedComp = compositions[0]
+      expect(focusedComp?.id).toBe('focused')
+      expect(focusedComp?.modules.some(m => m.moduleName === '@deepseek-ai/dsh-hooks-claude-code')).toBe(true)
     } finally {
       await handle.dispose()
     }

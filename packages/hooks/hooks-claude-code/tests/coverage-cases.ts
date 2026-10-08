@@ -1,7 +1,7 @@
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync, chmodSync, existsSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, chmodSync, existsSync, readFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -133,6 +133,26 @@ export function defineCoverageCases(group: CoverageGroup): void {
       // updatedInput is NOT honored — the tool ran with the ORIGINAL args.
       expect((sawArgs as { command?: string }).command).toBe('original')
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('updatedInput'))
+    })
+
+    it('falls back from .dsh/hooks.json to .claude/hooks.json when available', async () => {
+      const d = dir()
+      const marker = join(d, 'fallback_ran')
+      sh(d, 'fb.sh', `#!/usr/bin/env bash\ntouch "${marker}"\n`)
+      const claudeDir = join(d, '.claude')
+      mkdirSync(claudeDir, { recursive: true })
+      writeFileSync(join(claudeDir, 'hooks.json'), JSON.stringify({
+        hooks: {
+          PreToolUse: [{ hooks: [{ type: 'command', command: join(d, 'fb.sh') }] }],
+        },
+      }))
+      const adapter = new MockAdapter([toolCallResponse('c1', 'echo', {}), textResponse('done')])
+      const ctx = await harness(join(d, '.dsh', 'hooks.json'), adapter)
+      ctx.tools.register(defineContentToolFixture({ name: 'echo', description: 'e', parameters: {}, async execute() { return [{ type: 'text', text: 'ok' }] } }))
+      const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
+      agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+      await waitForIdle(ctx, agent)
+      expect(existsSync(marker)).toBe(true)
     })
   })
 

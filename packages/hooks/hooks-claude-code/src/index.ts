@@ -8,7 +8,7 @@
  * @module @deepseek-ai/dsh-hooks-claude-code
  */
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent, PreStepDecision, TurnBoundaryProjection } from '@deepseek-ai/dsh-agent'
@@ -107,7 +107,14 @@ export function apply(ctx: Context, config: Config): void {
   // Parse once at load. A read or parse failure logs and registers nothing.
   let parsed: ClaudeCodeHookConfig = {}
   try {
-    const raw: unknown = JSON.parse(readFileSync(config.configPath, 'utf8'))
+    let resolvedConfigPath = config.configPath
+    if (!existsSync(resolvedConfigPath) && resolvedConfigPath.endsWith('.dsh/hooks.json')) {
+      const fallback = resolvedConfigPath.replace(/\.dsh\/hooks\.json$/, '.claude/hooks.json')
+      if (existsSync(fallback)) {
+        resolvedConfigPath = fallback
+      }
+    }
+    const raw: unknown = JSON.parse(readFileSync(resolvedConfigPath, 'utf8'))
     const result = parseClaudeCodeConfig(raw, {
       ...config.pluginRoot !== undefined ? { pluginRoot: config.pluginRoot } : {},
       ...config.projectDir !== undefined ? { projectDir: config.projectDir } : {},

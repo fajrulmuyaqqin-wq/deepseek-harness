@@ -1,13 +1,13 @@
 # Agent preset focused: one `@deepseek-ai/dsh-agent-preset` declaration inserted
 # after the web patch. Focused developer preset with precision editor, terminal,
-# dynamic catalog discovery, and temporal reactivity.
+# dynamic catalog discovery, temporal reactivity, and lifecycle hooks.
 - insert:
     - id: preset-focused
       name: '@deepseek-ai/dsh-agent-preset'
       config:
         id: focused
         name: Focused mode
-        description: Autonomous developer mode with precision editor, terminal, dynamic discovery, and temporal reactivity.
+        description: Autonomous developer mode with precision editor, terminal, dynamic discovery, temporal reactivity, and lifecycle hooks.
         order: 2
         plugins:
           - id: persona
@@ -137,3 +137,7 @@
             name: '@deepseek-ai/dsh-tool-schedule'
           - id: present
             name: '@deepseek-ai/dsh-tool-present'
+          - id: lifecycle-hooks
+            name: '@deepseek-ai/dsh-hooks-claude-code'
+            config:
+              configPath: ./.dsh/hooks.json
