@@ -17,6 +17,9 @@ import type { MultimodalEmbedService, MemoryCategory } from '../types.ts'
 import type { MultimodalEmbedConfig } from '../config.ts'
 import type { ToolActivator } from '../tools/activate-tool.ts'
 import { autoSniffAndSaveDirective, autoSniffAndRevokeDirective } from '../directive-sniffer.ts'
+import { extractLexicalBoosts } from '../heuristics/intent-matcher.ts'
+import { MarkovTransitionTracker } from '../heuristics/markov-tracker.ts'
+import { DynamicPackBucketingEngine } from '../heuristics/pack-bucketing.ts'
 
 type ToolSchema = PromptAssembly['tools'][number]
 
@@ -49,6 +52,13 @@ export function registerToolRouterHook(
 
   // Cache for tool vector representations
   const toolVectorCache = new Map<string, Float32Array>()
+
+  // Heuristic Markov Transition Tracker & Dynamic Pack Bucketing Engine
+  const markovTracker = new MarkovTransitionTracker()
+  const packBucketing = new DynamicPackBucketingEngine(
+    config.toolRouting.bucketing.toolPacks,
+    Array.from(coreToolsSet.values()),
+  )
 
   // All known tools seen across assemblies
   const allKnownTools = new Set<string>()
@@ -338,10 +348,20 @@ export function registerToolRouterHook(
         }
       }
 
+      // Extract zero-latency lexical boosts (Tier 1)
+      const lexicalResult = config.toolRouting.heuristics.enabled
+        ? extractLexicalBoosts(intentText, config.toolRouting.heuristics.boostWeight)
+        : { boosts: new Map<string, number>(), matchedDomains: new Set<string>() }
+
+      // Extract Markov temporal transition boosts (Tier 1)
+      const markovBoosts = (config.toolRouting.heuristics.markovEnabled && sessionId)
+        ? markovTracker.getBoosts(sessionId)
+        : new Map<string, number>()
+
       // Vectorize intent for tool ranking
       const intentVector = await service.embedText(intentText)
 
-      // Score candidate tools against intent
+      // Score candidate tools against intent with score fusion (S = S_dense + Δ_heur + Δ_markov)
       const scoredCandidates: Array<{ tool: ToolSchema; score: number }> = []
 
       for (const tool of candidateTools) {
@@ -361,22 +381,67 @@ export function registerToolRouterHook(
           })
         }
 
-        const score = service.cosineSimilarity(intentVector, toolVec)
-        if (score >= config.toolRouting.similarityThreshold) {
-          scoredCandidates.push({ tool, score })
+        const baseScore = service.cosineSimilarity(intentVector, toolVec)
+        const lexBoost = lexicalResult.boosts.get(tool.name) ?? 0
+        const markovBoost = markovBoosts.get(tool.name) ?? 0
+        const fusedScore = baseScore + lexBoost + markovBoost
+
+        scoredCandidates.push({ tool, score: fusedScore })
+      }
+
+      // Stage 2: Cross-Encoder Reranker if enabled
+      if (config.toolRouting.reranker.enabled && scoredCandidates.length > 0) {
+        const topK = config.toolRouting.reranker.topKCandidates
+        const topCandidates = [...scoredCandidates].sort((a, b) => b.score - a.score).slice(0, topK)
+        try {
+          const rerankInputs = topCandidates.map(sc => ({
+            id: sc.tool.name,
+            text: `${sc.tool.name} ${sc.tool.description}`,
+          }))
+          const rerankResults = await service.rerankCandidates(intentText, rerankInputs)
+          const rerankScoreMap = new Map(rerankResults.map(r => [r.id, r.score]))
+
+          for (const sc of scoredCandidates) {
+            const crossScore = rerankScoreMap.get(sc.tool.name)
+            if (crossScore !== undefined) {
+              // Blend Stage-1 fused score with Stage-2 cross-encoder score
+              sc.score = (sc.score * 0.5) + (crossScore * 0.5)
+            }
+          }
+        } catch (rerankErr: unknown) {
+          const msg = rerankErr instanceof Error ? rerankErr.message : String(rerankErr)
+          ctx.logger.debug(`Stage-2 cross-encoder reranking skipped: ${msg}`)
         }
       }
 
-      // Sort scored candidates descending
-      scoredCandidates.sort((a, b) => b.score - a.score)
+      // Qualifying tools set for admission
+      const qualifyingToolNames = new Set<string>()
+      for (const tool of coreTools) qualifyingToolNames.add(tool.name)
+      for (const tool of stickyActiveTools) qualifyingToolNames.add(tool.name)
 
-      // Available slots for newly dynamic tools after accounting for sticky active tools
-      const remainingDynamicSlots = Math.max(0, config.toolRouting.maxDynamicTools - stickyActiveTools.length)
-      const selectedDynamicTools = scoredCandidates
-        .slice(0, remainingDynamicSlots)
-        .map(sc => sc.tool)
+      for (const sc of scoredCandidates) {
+        if (sc.score >= config.toolRouting.similarityThreshold) {
+          qualifyingToolNames.add(sc.tool.name)
+        }
+      }
 
-      const activeTools = [...coreTools, ...stickyActiveTools, ...selectedDynamicTools]
+      let activeTools: ToolSchema[]
+
+      // Tier 2: Dynamic Pack Bucketing (Cache Shielding)
+      if (config.toolRouting.bucketing.enabled) {
+        activeTools = packBucketing.resolveAdmittedTools(allTools, qualifyingToolNames, lexicalResult.matchedDomains)
+      } else {
+        // Fallback: Individual tool selection
+        scoredCandidates.sort((a, b) => b.score - a.score)
+        const remainingDynamicSlots = Math.max(0, config.toolRouting.maxDynamicTools - stickyActiveTools.length)
+        const selectedDynamicTools = scoredCandidates
+          .filter(sc => qualifyingToolNames.has(sc.tool.name))
+          .slice(0, remainingDynamicSlots)
+          .map(sc => sc.tool)
+
+        activeTools = [...coreTools, ...stickyActiveTools, ...selectedDynamicTools]
+      }
+
       const activeNames = new Set(activeTools.map(t => t.name))
 
       // Lock for this session's turn boundary
@@ -408,6 +473,13 @@ export function registerToolRouterHook(
     } else if (event.type === 'turn/end') {
       state.consecutiveErrors = 0
       state.turnLock = undefined
+      if (config.toolRouting.heuristics.markovEnabled) {
+        markovTracker.recordTurnEnd(
+          sid,
+          state.currentTurnExecutedTools,
+          config.toolRouting.heuristics.markovBiasWeight,
+        )
+      }
       state.stickyTools.clear()
       for (const name of state.currentTurnExecutedTools) {
         state.stickyTools.add(name)

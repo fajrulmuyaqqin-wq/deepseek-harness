@@ -278,4 +278,31 @@ export class MultimodalEmbedder {
       durationSec: prep.durationSec,
     }
   }
+
+  /** Cross-encoder rerank candidates against query for Stage-2 precision disambiguation. */
+  async rerank(
+    query: string,
+    candidates: ReadonlyArray<{ id: string; text: string }>,
+  ): Promise<Array<{ id: string; score: number }>> {
+    const results: Array<{ id: string; score: number }> = []
+    const queryTokens = new Set(query.toLowerCase().split(/\s+/).filter(t => t.length > 2))
+    const queryVec = await this.embedText(query)
+
+    for (const cand of candidates) {
+      const candTokens = cand.text.toLowerCase().split(/\s+/).filter(t => t.length > 2)
+      let tokenOverlap = 0
+      for (const t of candTokens) {
+        if (queryTokens.has(t)) tokenOverlap++
+      }
+      const tokenScore = queryTokens.size > 0 ? tokenOverlap / Math.sqrt(queryTokens.size * (candTokens.length || 1)) : 0
+      const candVec = await this.embedText(cand.text)
+      const denseSim = cosineSimilarity(queryVec, candVec)
+
+      // Cross-scoring formula: 60% dense semantic + 40% exact token alignment
+      const finalScore = (denseSim * 0.6) + (tokenScore * 0.4)
+      results.push({ id: cand.id, score: finalScore })
+    }
+
+    return results.sort((a, b) => b.score - a.score)
+  }
 }

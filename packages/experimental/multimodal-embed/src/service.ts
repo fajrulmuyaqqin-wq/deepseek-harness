@@ -14,6 +14,8 @@ import type {
   MemoryItem,
   ImageHintResult,
   AudioHintResult,
+  RerankCandidate,
+  RerankResult,
 } from './types.ts'
 import type { MultimodalEmbedConfig } from './config.ts'
 import type { WorkerRequest, WorkerResponse } from './worker/types.ts'
@@ -157,6 +159,14 @@ export class MultimodalEmbeddingService extends Service implements MultimodalEmb
           meta: { durationSec: result.durationSec },
         }
       }
+      case 'rerank': {
+        const rerankResults = await this.localFallback.rerank(req.query, req.candidates)
+        return {
+          id: req.id,
+          ok: true,
+          rerankResults,
+        }
+      }
     }
   }
 
@@ -164,7 +174,7 @@ export class MultimodalEmbeddingService extends Service implements MultimodalEmb
     const id = ++this.requestId
     const res = await this.sendWorkerRequest({ id, kind: 'embed-text', text }, signal)
     if (!res.ok) throw new Error(res.error)
-    return res.vector
+    return res.vector ?? new Float32Array(0)
   }
 
   async embedImage(imageBuffer: Uint8Array, signal?: AbortSignal): Promise<ImageHintResult> {
@@ -177,7 +187,7 @@ export class MultimodalEmbeddingService extends Service implements MultimodalEmb
     const width = typeof res.meta?.width === 'number' ? res.meta.width : this.config.maxImageDimension
     const height = typeof res.meta?.height === 'number' ? res.meta.height : this.config.maxImageDimension
     return {
-      vector: res.vector,
+      vector: res.vector ?? new Float32Array(0),
       semanticHints: res.semanticHints ?? [],
       width,
       height,
@@ -193,7 +203,7 @@ export class MultimodalEmbeddingService extends Service implements MultimodalEmb
     if (!res.ok) throw new Error(res.error)
     const durationSec = typeof res.meta?.durationSec === 'number' ? res.meta.durationSec : 0
     return {
-      vector: res.vector,
+      vector: res.vector ?? new Float32Array(0),
       intentHint: res.semanticHints?.[0] ?? 'voice-audio',
       durationSec,
     }
@@ -234,6 +244,26 @@ export class MultimodalEmbeddingService extends Service implements MultimodalEmb
 
   deleteEntriesByQuery(query?: string, category?: MemoryCategory): Promise<{ deletedCount: number; deletedIds: string[] }> {
     return Promise.resolve(this.db.deleteByQuery(category, query))
+  }
+
+  async rerankCandidates(
+    query: string,
+    candidates: readonly RerankCandidate[],
+    signal?: AbortSignal,
+  ): Promise<RerankResult[]> {
+    if (candidates.length === 0) return []
+    const id = ++this.requestId
+    const res = await this.sendWorkerRequest(
+      {
+        id,
+        kind: 'rerank',
+        query,
+        candidates: candidates.map(c => ({ id: c.id, text: c.text })),
+      },
+      signal,
+    )
+    if (!res.ok) throw new Error(res.error)
+    return res.rerankResults ?? []
   }
 
   teardown(): void {

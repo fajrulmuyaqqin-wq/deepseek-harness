@@ -20,7 +20,7 @@ const taskQueue: Array<WorkerRequest> = []
 
 function postResponse(res: WorkerResponse): void {
   if (!parentPort) return
-  if (res.ok && res.vector.buffer instanceof ArrayBuffer) {
+  if (res.ok && res.vector && res.vector.buffer instanceof ArrayBuffer) {
     // Zero-Copy transferable ArrayBuffer transfer
     parentPort.postMessage(res, [res.vector.buffer])
   } else {
@@ -78,6 +78,16 @@ async function processNext(): Promise<void> {
           vector: result.vector,
           semanticHints: [result.intentHint],
           meta: { durationSec: result.durationSec },
+        })
+        break
+      }
+
+      case 'rerank': {
+        const rerankResults = await embedder.rerank(req.query, req.candidates)
+        postResponse({
+          id: req.id,
+          ok: true,
+          rerankResults,
         })
         break
       }

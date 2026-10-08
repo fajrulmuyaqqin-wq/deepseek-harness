@@ -6,6 +6,23 @@
 
 import z from '@deepseek-ai/schemastery'
 
+export interface ToolHeuristicsConfig {
+  enabled: boolean
+  boostWeight: number
+  markovEnabled: boolean
+  markovBiasWeight: number
+}
+
+export interface ToolBucketingConfig {
+  enabled: boolean
+  toolPacks: Record<string, string[]>
+}
+
+export interface ToolRerankerConfig {
+  enabled: boolean
+  topKCandidates: number
+}
+
 export interface ToolRoutingConfig {
   enabled: boolean
   policy: 'turn-boundary' | 'step-boundary'
@@ -13,6 +30,9 @@ export interface ToolRoutingConfig {
   maxDynamicTools: number
   maxDynamicSkills: number
   similarityThreshold: number
+  heuristics: ToolHeuristicsConfig
+  bucketing: ToolBucketingConfig
+  reranker: ToolRerankerConfig
 }
 
 export interface MemoryRecallConfig {
@@ -39,7 +59,25 @@ export interface MultimodalEmbedConfig {
   toolRouting: ToolRoutingConfig
 }
 
-export const toolRoutingSchema: z<Partial<ToolRoutingConfig>, ToolRoutingConfig> = z.object({
+export const toolHeuristicsSchema = z.object({
+  enabled: z.boolean().default(true).description('Enable fast lexical regex cues for high-precision intent boost'),
+  boostWeight: z.number().min(0).max(1).default(0.4).description('Score boost applied when lexical patterns match'),
+  markovEnabled: z.boolean().default(true).description('Enable Markov tool transition temporal prior'),
+  markovBiasWeight: z.number().min(0).max(1).default(0.3).description('Score bias applied for expected follow-up tools'),
+})
+
+export const toolBucketingSchema = z.object({
+  enabled: z.boolean().default(true).description('Enable dynamic domain pack bucketing for KV-cache shielding'),
+  toolPacks: z.dict(z.array(z.string())).default({})
+    .description('Explicit static pack definitions; dynamic auto-bucketing applies to others'),
+})
+
+export const toolRerankerSchema = z.object({
+  enabled: z.boolean().default(false).description('Enable Stage-2 Cross-Encoder reranking for precision disambiguation'),
+  topKCandidates: z.number().step(1).min(2).max(20).default(8).description('Number of Stage-1 candidates passed to Cross-Encoder'),
+})
+
+export const toolRoutingSchema = z.object({
   enabled: z.boolean().default(true).description('Enable semantic tool and skill pruning'),
   policy: z.union(['turn-boundary' as const, 'step-boundary' as const]).default('turn-boundary')
     .description('Turn-boundary preserves LLM prompt prefix cache; step-boundary filters every step'),
@@ -51,9 +89,23 @@ export const toolRoutingSchema: z<Partial<ToolRoutingConfig>, ToolRoutingConfig>
     .description('Maximum number of specialized skills admitted per turn'),
   similarityThreshold: z.number().min(0).max(1).default(0.65)
     .description('Minimum cosine similarity required to admit a dynamic tool or skill'),
+  heuristics: toolHeuristicsSchema.default({
+    enabled: true,
+    boostWeight: 0.4,
+    markovEnabled: true,
+    markovBiasWeight: 0.3,
+  }),
+  bucketing: toolBucketingSchema.default({
+    enabled: true,
+    toolPacks: {},
+  }),
+  reranker: toolRerankerSchema.default({
+    enabled: false,
+    topKCandidates: 8,
+  }),
 })
 
-export const memoryRecallSchema: z<Partial<MemoryRecallConfig>, MemoryRecallConfig> = z.object({
+export const memoryRecallSchema = z.object({
   enabled: z.boolean().default(true).description('Enable automatic passive memory recall during prompt assembly'),
   similarityThreshold: z.number().min(0).max(1).default(0.35)
     .description('Minimum cosine similarity required to inject a memory entry into assembly'),
@@ -63,7 +115,7 @@ export const memoryRecallSchema: z<Partial<MemoryRecallConfig>, MemoryRecallConf
     .description('Memory categories eligible for passive recall; rules are separately injected at highest priority'),
 })
 
-export const Config: z<Partial<MultimodalEmbedConfig>, MultimodalEmbedConfig> = z.object({
+export const Config = z.object({
   modelPath: z.union([z.string(), z.const(undefined)]).description('Optional path to local ONNX EmbeddingGemma model file'),
   databasePath: z.union([z.string(), z.const(undefined)]).description('Optional path to local vector database SQLite file'),
   device: z.union(['cpu' as const, 'directml' as const, 'cuda' as const]).default('cpu'),
