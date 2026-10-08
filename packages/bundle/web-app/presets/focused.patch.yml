@@ -25,13 +25,14 @@
                    - Chain your operations across turns: read/grep files -> make precise edits -> run tests/builds to verify.
                    - Do not stop mid-task after inspecting or editing to ask "Should I proceed?". Continue until the task is completely solved and verified.
                    - Treat tool errors as immediate feedback: inspect the error output, adjust arguments or files, and retry in the next step.
-                3. Temporal Reactive Loop (Background & Offline Tasks):
-                   - For long-running operations (builds, test suites, persistent servers, watchers), execute them in the background (run_in_background: true) or as jobs.
+                3. Dual-Trigger Autonomous & Reactive Execution:
                    - Never busy-wait, poll, or use "sleep" in foreground bash.
-                   - The harness automatically wakes you up when an offline/background task finishes ([Background Task Completed]).
-                   - When woken up by a task completion event, immediately examine its output and resume the next step in the continuous loop.
+                   - For deterministic batch/test/build tasks: launch via bash with run_in_background=true. The harness automatically wakes you up when the process settles ([status: completed|failed]).
+                   - For long-running daemons or indeterminate tasks: use schedule_create (after/every) to set a time-based reminder/heartbeat inspection.
+                   - When woken up by a background job or schedule reminder event, immediately examine the job output via job_output or inspect system health and advance the goal objective.
+                   - Use create_goal / update_goal for multi-round long-running missions to keep execution autonomous across turns.
                 4. Dynamic Tool & Skill Discovery (Complex Intent Mitigation):
-                   - You have high-efficiency core tools (str_replace_editor, bash, glob, grep, search_memory, save_lesson, save_rule, inspect_multimodal, activate_tool).
+                   - You have high-efficiency core tools (str_replace_editor, bash, glob, grep, job_output, job_list, schedule_create, create_goal, search_memory, save_lesson, save_rule, inspect_multimodal, activate_tool).
                    - When a task requires extended capabilities (e.g., git analysis, document conversion, web search, subagents, or specialized skills), call `search_memory` with category: 'catalog_tool' or 'catalog_skill' to discover the exact tool/skill.
                    - Call `activate_tool` with the discovered tool name to immediately activate it into your active turn.
                 5. Anti-Looping & Guardrails:
@@ -70,6 +71,9 @@
             name: '@deepseek-ai/dsh-tool-jobs'
             config:
               completionDelivery: wakeup
+              maxConsecutiveWakes: 16
+              waitTimeoutMs: 30000
+              maxWaitTimeoutMs: 600000
           - id: multimodal-embedding
             name: cordis:group
             group: true
@@ -103,6 +107,12 @@
                       - job_output
                       - job_list
                       - job_kill
+                      - schedule_create
+                      - schedule_list
+                      - schedule_delete
+                      - create_goal
+                      - update_goal
+                      - get_goal
                       - search_memory
                       - save_lesson
                       - save_rule
@@ -140,6 +150,12 @@
               searchTimeoutMs: 60000
           - id: tool-schedule
             name: '@deepseek-ai/dsh-tool-schedule'
+          - id: command-goal
+            name: '@deepseek-ai/dsh-command-goal'
+          - id: tool-goal
+            name: '@deepseek-ai/dsh-tool-goal'
+            config:
+              blockedAfterConsecutiveRounds: 3
           - id: present
             name: '@deepseek-ai/dsh-tool-present'
           - id: lifecycle-hooks

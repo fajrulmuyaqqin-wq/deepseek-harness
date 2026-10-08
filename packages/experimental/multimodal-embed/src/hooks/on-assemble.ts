@@ -25,6 +25,7 @@ interface SessionState {
   readonly dynamicallyActivatedTools: Set<string>
   consecutiveErrors: number
   turnLock?: { key: string; activeToolNames: Set<string> } | undefined
+  latestUserMessage?: { text: string; sourceKind?: string | undefined } | undefined
 }
 
 export function registerToolRouterHook(
@@ -38,6 +39,11 @@ export function registerToolRouterHook(
   coreToolsSet.add('save_lesson')
   coreToolsSet.add('save_rule')
   coreToolsSet.add('activate_tool')
+  coreToolsSet.add('job_output')
+  coreToolsSet.add('job_list')
+  coreToolsSet.add('create_goal')
+  coreToolsSet.add('update_goal')
+  coreToolsSet.add('get_goal')
 
   // Cache for tool vector representations
   const toolVectorCache = new Map<string, Float32Array>()
@@ -105,9 +111,16 @@ export function registerToolRouterHook(
       if (sessionId) {
         lastActiveSessionId = sessionId
       }
+      const sessionState = sessionId ? getOrCreateSessionState(sessionId) : undefined
 
-      // Extract turn intent from variables or context
-      const intentText = assembly.variables.userPrompt ?? assembly.variables.topic ?? ''
+      // Extract turn intent from variables, context, or latest session message
+      let intentText = assembly.variables.userPrompt ?? assembly.variables.topic ?? ''
+      let incomingSourceKind: string | undefined
+
+      if (intentText.trim().length === 0 && sessionState?.latestUserMessage) {
+        intentText = sessionState.latestUserMessage.text
+        incomingSourceKind = sessionState.latestUserMessage.sourceKind
+      }
 
       // 0. Active Project Rules & Guidelines (Directives Domain)
       // Retrieve operational project rules and inject at highest priority (pinned at top)
@@ -193,6 +206,57 @@ export function registerToolRouterHook(
         }
       }
 
+      // 3. Autonomous Woken-Turn Event Sniffer (Dual-Trigger Detection)
+      if (intentText.trim().length > 0) {
+        // A. Background Job Settlement Event
+        const jobMatch = intentText.match(/background job ([\w-]+).*?finished\s+\[(?:status:\s*)?(\w+)(?:,\s*([^\]]+))?\]/i)
+        if (jobMatch || incomingSourceKind === 'tool-jobs') {
+          const jobId = jobMatch ? jobMatch[1] : undefined
+          const status = jobMatch ? jobMatch[2] : 'settled'
+          const detail = jobMatch?.[3] ? ` (${jobMatch[3]})` : ''
+          const noticeText = jobId
+            ? `Notice: Background job \`${jobId}\` has settled with status \`${status}\`${detail}.\nAction: Call \`job_output({ job_id: "${jobId}" })\` immediately to inspect its stdout and stderr before taking next steps.`
+            : 'Notice: A background job has settled.\nAction: Call `job_output` or `job_list` to review results.'
+
+          assembly.sections.push({
+            name: 'active-background-job-event',
+            text: `## Active Background Task Event\n${noticeText}`,
+            interpolate: false,
+          })
+
+          if (sessionState) {
+            sessionState.stickyTools.add('job_output')
+            sessionState.stickyTools.add('job_list')
+          }
+        }
+
+        // B. Schedule Reminder Event
+        const isSchedule = intentText.includes('[SCHEDULE REMINDER]') || incomingSourceKind === 'schedule'
+        if (isSchedule) {
+          let promptDesc = 'Periodic check-in'
+          const promptMatch = intentText.match(/reminder_prompt_json:\s*(".*?")/i)
+          if (promptMatch && promptMatch[1]) {
+            try {
+              promptDesc = JSON.parse(promptMatch[1]) as string
+            } catch {
+              promptDesc = promptMatch[1]
+            }
+          }
+
+          assembly.sections.push({
+            name: 'scheduled-checkin-event',
+            text: `## Scheduled Check-in Event (Interval Trigger)\nNotice: An interval reminder timer has triggered.\nPrompt: "${promptDesc}"\nAction: Inspect current background jobs or service status and advance the task.`,
+            interpolate: false,
+          })
+
+          if (sessionState) {
+            sessionState.stickyTools.add('job_list')
+            sessionState.stickyTools.add('job_output')
+            sessionState.stickyTools.add('schedule_list')
+          }
+        }
+      }
+
       const allTools = assembly.tools
       for (const t of allTools) {
         allKnownTools.add(t.name)
@@ -222,15 +286,14 @@ export function registerToolRouterHook(
         }
       }
 
-      const sessionState = sessionId ? getOrCreateSessionState(sessionId) : undefined
-
       if (!config.toolRouting.enabled) {
         // Tool routing / dynamic pruning is disabled; preserve all registered tools
         return await next()
       }
 
-      if (allTools.length <= config.toolRouting.maxDynamicTools + coreToolsSet.size) {
-        // Tool count already small, no pruning needed
+      const nonCoreToolsCount = allTools.filter(t => !coreToolsSet.has(t.name)).length
+      if (nonCoreToolsCount <= config.toolRouting.maxDynamicTools) {
+        // Dynamic non-core tool count already within limit, no pruning needed
         return await next()
       }
 
@@ -345,6 +408,15 @@ export function registerToolRouterHook(
       state.currentTurnExecutedTools.clear()
     } else if (event.type === 'user/message') {
       state.consecutiveErrors = 0
+      const text = event.data.content
+        .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+        .map(c => c.text)
+        .join('\n')
+      const sourceKind = (event.data.source as { kind?: string } | undefined)?.kind
+      state.latestUserMessage = {
+        text,
+        ...sourceKind !== undefined ? { sourceKind } : {},
+      }
     }
   })
 

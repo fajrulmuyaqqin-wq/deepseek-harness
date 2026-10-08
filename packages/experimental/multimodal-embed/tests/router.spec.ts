@@ -449,4 +449,58 @@ describe('Turn-Boundary Tool-RAG & Passive Memory Recall (on-assemble)', () => {
 
     service.teardown()
   })
+
+  it('sniffs background job settlement event and injects Active Background Task Event section', async () => {
+    const ctx = new Context()
+    const service = new MultimodalEmbeddingService(ctx, Config({}))
+    ctx.set('multimodalEmbed', service)
+
+    registerToolRouterHook(ctx, service, Config({}))
+
+    const assembly: PromptAssembly = {
+      sections: [],
+      contexts: [],
+      tools: [],
+      variables: {
+        userPrompt: 'background job job_test_42 (bash: pnpm run test) finished [status: completed]. Read its output with job_output.',
+      },
+    }
+
+    await ctx.parallel('system-prompt/assemble', assembly, {}, async () => assembly)
+
+    const jobSection = assembly.sections.find(s => s.name === 'active-background-job-event')
+    expect(jobSection).toBeDefined()
+    expect(jobSection?.text).toContain('## Active Background Task Event')
+    expect(jobSection?.text).toContain('job_test_42')
+    expect(jobSection?.text).toContain('status `completed`')
+    expect(jobSection?.text).toContain('job_output({ job_id: "job_test_42" })')
+
+    service.teardown()
+  })
+
+  it('sniffs interval schedule reminder and injects Scheduled Check-in Event section', async () => {
+    const ctx = new Context()
+    const service = new MultimodalEmbeddingService(ctx, Config({}))
+    ctx.set('multimodalEmbed', service)
+
+    registerToolRouterHook(ctx, service, Config({}))
+
+    const assembly: PromptAssembly = {
+      sections: [],
+      contexts: [],
+      tools: [],
+      variables: {
+        userPrompt: '[SCHEDULE REMINDER]\nschedule_id_json: "sched_01"\noccurrence_at: "2026-10-09T00:00:00Z"\nreminder_prompt_json: "Cek kesehatan port 3080 dan memory leak"',
+      },
+    }
+
+    await ctx.parallel('system-prompt/assemble', assembly, {}, async () => assembly)
+
+    const schedSection = assembly.sections.find(s => s.name === 'scheduled-checkin-event')
+    expect(schedSection).toBeDefined()
+    expect(schedSection?.text).toContain('## Scheduled Check-in Event (Interval Trigger)')
+    expect(schedSection?.text).toContain('Cek kesehatan port 3080 dan memory leak')
+
+    service.teardown()
+  })
 })
