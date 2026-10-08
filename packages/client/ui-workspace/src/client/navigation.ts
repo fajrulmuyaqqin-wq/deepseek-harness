@@ -198,7 +198,8 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     try {
       return await this.sessions.create({ workspaceId, sessionId })
     } catch (error: unknown) {
-      if (sessionCreateErrorOf(error)?.rpcError.code !== 'session/writer-held') throw error
+      const code = sessionCreateErrorOf(error)?.rpcError.code
+      if (code !== 'session/writer-held' && code !== 'agent-preset/not-found') throw error
       return this.sessions.create({ workspaceId })
     }
   }

@@ -1057,6 +1057,26 @@ describe('UiWorkspaceService', () => {
     ])
   })
 
+  it('creates a fresh session when a reusable blank preset is not found', async () => {
+    const b = bench({
+      sessions: sessionState([
+        summary('missing-preset', { blank: true, cwd: '/w/a' }),
+      ]),
+      workspaces: workspaceState([workspace('a', [sid('missing-preset')])]),
+      configureSessions: (sessions) => {
+        sessions.create.mockRejectedValueOnce(new SessionCreateError(
+          new RemoteError('agent-preset/not-found', 'Unknown agent preset', { agentPreset: 'sherlock', available: [] }),
+          sid('missing-preset'),
+        ))
+      },
+    })
+    await expect(b.uiWorkspace.connectWorkspace(wid('a'))).resolves.toBe(sid('created-a'))
+    expect(b.sessions.create.mock.calls).toEqual([
+      [{ workspaceId: wid('a'), sessionId: sid('missing-preset') }],
+      [{ workspaceId: wid('a') }],
+    ])
+  })
+
   it.each(['workspace', 'panel'])('does not let saved blank restoration replace a later %s navigation', async (target) => {
     persistSelection({ sessionId: sid('saved') })
     const acquired = Promise.withResolvers<SessionId>()
