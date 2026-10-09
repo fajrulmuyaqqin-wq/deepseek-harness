@@ -20,7 +20,8 @@
  */
 
 import { existsSync } from 'node:fs'
-import { isAbsolute, join, parse, relative, sep } from 'node:path'
+import { tmpdir } from 'node:os'
+import { basename, isAbsolute, join, parse, relative, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import { ItemRetainer, TextRetainer } from '@deepseek-ai/dsh-output-retention'
@@ -104,6 +105,8 @@ export interface RipgrepRun {
   noMatches: boolean
   /** The resolved working directory the command ran in (the display-relativization base). */
   workdir: string
+  /** The sandbox execution mode in effect during the run. */
+  mode?: string
 }
 
 /**
@@ -183,6 +186,73 @@ export function resolveRgPath(): Promise<string> {
   return rgPathPromise
 }
 
+/** File name patterns identifying known credential and secret files. */
+const SENSITIVE_FILE_PATTERNS: readonly RegExp[] = [
+  /^\.env(\..+)?$/i,
+  /^id_(rsa|dsa|ecdsa|ed25519)$/i,
+  /\.(pem|key|p12|pfx|pkcs12|keystore)$/i,
+  /\.(bash|zsh|sh)_history$/i,
+]
+
+/** Path segment patterns identifying credential directories and host files. */
+const SENSITIVE_PATH_PATTERNS: readonly RegExp[] = [
+  /(?:^|[\\/])\.git[\\/]config$/i,
+  /(?:^|[\\/])\.(ssh|aws|gnupg|azure|kube)(?:[\\/]|$)/i,
+  /(?:^|[\\/])\.config[\\/](gcloud|gh|op)(?:[\\/]|$)/i,
+  /^[\\/]etc[\\/](shadow|sudoers|master\.passwd)$/i,
+]
+
+/** Excluded template file patterns that are explicitly safe to inspect. */
+const SAFE_TEMPLATE_PATTERNS: readonly RegExp[] = [
+  /^\.env\.(example|sample|template)$/i,
+]
+
+/** Globs that exclude protected credentials and private keys from ripgrep traversal. */
+export const SENSITIVE_SEARCH_GLOBS: readonly string[] = [
+  '--glob=!**/.env',
+  '--glob=!**/.env.local',
+  '--glob=!**/.env.production',
+  '--glob=!**/.env.development',
+  '--glob=!**/.env.staging',
+  '--glob=!**/.env.test',
+  '--glob=!**/*.pem',
+  '--glob=!**/*.key',
+  '--glob=!**/id_*',
+  '--glob=!**/.git/config',
+  '--glob=!**/.ssh/**',
+  '--glob=!**/.aws/**',
+  '--glob=!**/*_history',
+]
+
+/** Test whether an explicit search target path points to a sensitive credential file. */
+export function isSensitiveSearchTarget(filePath: string): boolean {
+  if (filePath.length === 0) return false
+  const name = basename(filePath)
+  for (const pattern of SAFE_TEMPLATE_PATTERNS) {
+    if (pattern.test(name)) return false
+  }
+  for (const pattern of SENSITIVE_FILE_PATTERNS) {
+    if (pattern.test(name)) return true
+  }
+  const normalized = filePath.replace(/\\/g, '/')
+  for (const pattern of SENSITIVE_PATH_PATTERNS) {
+    if (pattern.test(normalized)) return true
+  }
+  return false
+}
+
+/** Determine whether an explicit search target path sits under the workspace or platform temp areas. */
+export function isAllowedSearchTarget(targetPath: string, workspaceRoot: string): boolean {
+  const resolvedTarget = resolve(workspaceRoot, targetPath)
+  for (const root of [workspaceRoot, '/tmp', tmpdir()]) {
+    const rel = relative(resolve(root), resolvedTarget)
+    if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) {
+      return true
+    }
+  }
+  return false
+}
+
 /**
  * Run the packaged ripgrep binary with a plain argv vector and return its
  * complete raw stdout. The working directory is the calling agent's session
@@ -233,10 +303,42 @@ export async function runRipgrep(
   }
   const cwd = exec.agent?.session.header.cwd
   const workdir = cwd ?? process.cwd()
+
+  type SandboxPolicyService = { resolve(req?: { session?: unknown }): { mode: string; workspaceRoot?: string } }
+  const sandboxPolicyService = ctx.get('sandboxPolicy') as SandboxPolicyService | undefined
+  const policy = sandboxPolicyService?.resolve(exec.agent ? { session: exec.agent.session } : {})
+  const mode = policy?.mode ?? 'danger-full-access'
+  const workspaceRoot = policy?.workspaceRoot ?? workdir
+
+  let finalArgv = [...argv]
+  if (mode !== 'danger-full-access') {
+    const targetIndex = argv.indexOf('--')
+    const requestedTarget = targetIndex !== -1 ? argv[targetIndex + 1] : undefined
+
+    if (requestedTarget !== undefined) {
+      if (isSensitiveSearchTarget(requestedTarget)) {
+        throw new SearchError(`cannot search "${requestedTarget}": sensitive credential file access denied under ${mode} mode`, 'SEARCH_FAILED')
+      }
+      if (!isAllowedSearchTarget(requestedTarget, workspaceRoot)) {
+        throw new SearchError(`cannot search "${requestedTarget}": path is outside workspace under ${mode} mode`, 'SEARCH_FAILED')
+      }
+    }
+
+    if (targetIndex !== -1) {
+      finalArgv = [
+        ...argv.slice(0, targetIndex),
+        ...SENSITIVE_SEARCH_GLOBS,
+        ...argv.slice(targetIndex),
+      ]
+    } else {
+      finalArgv = [...argv, ...SENSITIVE_SEARCH_GLOBS]
+    }
+  }
+
   let handle: SubprocessHandle
   try {
     handle = ctx.subprocess.spawn({
-      argv: [await resolveRgPath(), '--no-config', ...argv],
+      argv: [await resolveRgPath(), '--no-config', ...finalArgv],
       cwd: workdir,
       stdio: {
         stdin: 'ignore',
@@ -251,8 +353,6 @@ export async function runRipgrep(
     // impl can throw synchronously when the signal aborts between the check
     // above and this call (or when the platform-package resolution rejects).
     // The static narrowing that proves this re-check "always false" cannot
-    // see AbortSignal state changes.
-    // oxlint-disable-next-line typescript/no-unnecessary-condition
     if (exec.signal.aborted) {
       throw new SearchError(`${toolName} was aborted before completion (tool timeout or caller cancellation)`, 'SEARCH_ABORTED')
     }
@@ -271,7 +371,6 @@ export async function runRipgrep(
   }
   // The signal can abort while the spawn is awaited; the static narrowing that
   // proves this re-check "always false" cannot see AbortSignal state changes.
-  // oxlint-disable-next-line typescript/no-unnecessary-condition
   if (exec.signal.aborted) {
     throw new SearchError(`${toolName} was aborted before completion (tool timeout or caller cancellation)`, 'SEARCH_ABORTED')
   }
@@ -282,7 +381,7 @@ export async function runRipgrep(
     throw classifyRunFailure(toolName, outcome.exitCode, stderr.text, stderr.lossy)
   }
   const text = completeStdout(toolName, stdout, rawOutputMaxBytes)
-  return { stdout: text, noMatches: outcome.exitCode === 1, workdir }
+  return { stdout: text, noMatches: outcome.exitCode === 1, workdir, mode }
 }
 
 /**
