@@ -23,6 +23,7 @@ import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, isAbsolute, join, parse, relative, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-working-directory'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import { ItemRetainer, TextRetainer } from '@deepseek-ai/dsh-output-retention'
 import type { RetainedItems } from '@deepseek-ai/dsh-output-retention'
@@ -256,7 +257,7 @@ export function isAllowedSearchTarget(targetPath: string, workspaceRoot: string)
 /**
  * Run the packaged ripgrep binary with a plain argv vector and return its
  * complete raw stdout. The working directory is the calling agent's session
- * cwd (`exec.agent.session.header.cwd`) when available, else
+ * current directory when available, else
  * `process.cwd()`. `exec.signal` is forwarded so the cooperative tool timeout
  * (`@deepseek-ai/dsh-tool-call-timeout-policy`) and caller cancellation terminate the
  * process tree.
@@ -281,7 +282,7 @@ export function isAllowedSearchTarget(targetPath: string, workspaceRoot: string)
  * creation time becomes `SEARCH_ABORTED` instead.
  *
  * @param ctx - the plugin context; execution uses its `subprocess` service.
- * @param exec - the tool-execution context; supplies the session cwd and the abort signal.
+ * @param exec - the tool-execution context; supplies the owning Agent and the abort signal.
  * @param toolName - `glob` or `grep`, used in error messages.
  * @param argv - the ripgrep arguments (every model value an unquoted argv element; no shell layer exists).
  * @param rawOutputMaxBytes - cap on the complete raw stdout the tool will parse.
@@ -301,8 +302,11 @@ export async function runRipgrep(
   if (exec.signal.aborted) {
     throw new SearchError(`${toolName} was aborted before completion (tool timeout or caller cancellation)`, 'SEARCH_ABORTED')
   }
-  const cwd = exec.agent?.session.header.cwd
-  const workdir = cwd ?? process.cwd()
+  const workdir = exec.agent === undefined
+    ? process.cwd()
+    : (ctx.workingDirectory !== undefined
+      ? await ctx.workingDirectory.ensure(exec.agent, exec.signal)
+      : (exec.agent.session.header.cwd ?? process.cwd()))
 
   type SandboxPolicyService = { resolve(req?: { session?: unknown }): { mode: string; workspaceRoot?: string } }
   const sandboxPolicyService = ctx.get('sandboxPolicy') as SandboxPolicyService | undefined
@@ -334,7 +338,6 @@ export async function runRipgrep(
       finalArgv = [...argv, ...SENSITIVE_SEARCH_GLOBS]
     }
   }
-
   let handle: SubprocessHandle
   try {
     handle = ctx.subprocess.spawn({
