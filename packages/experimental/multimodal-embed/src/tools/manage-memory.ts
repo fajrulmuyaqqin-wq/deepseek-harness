@@ -104,17 +104,14 @@ export function createManageMemoryTool(service: MultimodalEmbedService) {
           ).join('\n\n')
           return [{ type: 'text', text: `🔍 **[HASIL PENCARIAN MEMORI]** (${items.length} hasil):\n\n${formatted}` }]
         }
-        if (val.action === 'list') {
-          const items = val.results ?? []
-          if (items.length === 0) {
-            return [{ type: 'text', text: `📋 **[DAFTAR MEMORI: ${(val.category ?? 'RULE').toUpperCase()}]**\nBelum ada entri tersimpan untuk kategori ini.` }]
-          }
-          const formatted = items.map(
-            (item, idx) => `${idx + 1}. [ID: \`${item.id}\`] ${item.content}`,
-          ).join('\n\n')
-          return [{ type: 'text', text: `📋 **[DAFTAR MEMORI: ${(val.category ?? 'RULE').toUpperCase()}]** (${items.length} entri):\n\n${formatted}` }]
+        const items = val.results ?? []
+        if (items.length === 0) {
+          return [{ type: 'text', text: `📋 **[DAFTAR MEMORI: ${(val.category ?? 'RULE').toUpperCase()}]**\nBelum ada entri tersimpan untuk kategori ini.` }]
         }
-        return [{ type: 'text', text: val.message }]
+        const formatted = items.map(
+          (item, idx) => `${idx + 1}. [ID: \`${item.id}\`] ${item.content}`,
+        ).join('\n\n')
+        return [{ type: 'text', text: `📋 **[DAFTAR MEMORI: ${(val.category ?? 'RULE').toUpperCase()}]** (${items.length} entri):\n\n${formatted}` }]
       },
     },
     async execute(args, exec) {
@@ -131,7 +128,7 @@ export function createManageMemoryTool(service: MultimodalEmbedService) {
           }
         }
 
-        const category: MemoryCategory = (args.category as MemoryCategory) ?? 'lesson'
+        const category: MemoryCategory = args.category ?? 'lesson'
 
         if (category === 'rule') {
           const scope = args.scope ?? 'workflow'
@@ -205,7 +202,7 @@ export function createManageMemoryTool(service: MultimodalEmbedService) {
         }
 
         if (args.query && args.query.trim().length > 0) {
-          const cat = args.category as MemoryCategory | undefined
+          const cat = args.category
           const res = await service.deleteEntriesByQuery(args.query.trim(), cat)
           return {
             ok: res.deletedCount > 0,
@@ -237,7 +234,7 @@ export function createManageMemoryTool(service: MultimodalEmbedService) {
         }
 
         const vector = await service.embedText(queryText, exec.signal)
-        const cat = args.category as MemoryCategory | undefined
+        const cat = args.category
         const matches = await service.searchSimilar(
           vector,
           args.limit ?? 5,
@@ -261,7 +258,7 @@ export function createManageMemoryTool(service: MultimodalEmbedService) {
       }
 
       // --- 4. ACTION: LIST ---
-      const category: MemoryCategory = (args.category as MemoryCategory) ?? 'rule'
+      const category: MemoryCategory = args.category ?? 'rule'
       const entries = await service.getEntriesByCategory(category, args.limit ?? 10)
       return {
         ok: true,

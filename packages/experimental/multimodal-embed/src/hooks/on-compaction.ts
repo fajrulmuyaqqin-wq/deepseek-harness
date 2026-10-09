@@ -171,92 +171,94 @@ export function registerCompactionListener(
 ): void {
   if (!config.autoCaptureCompacted) return
 
-  ctx.on('session/event', async (_session: Session, event: SessionEvent): Promise<void> => {
-    try {
-      const rawEvent = event as {
-        type: string
-        data?: {
-          summary?: Array<{ type?: string; text?: string }>
-          compactionId?: string
-          shadowedTokenCount?: number
-          shadowedSeqs?: unknown[]
+  ctx.on('session/event', (_session: Session, event: SessionEvent): void => {
+    void (async () => {
+      try {
+        const rawEvent = event as {
+          type: string
+          data?: {
+            summary?: Array<{ type?: string; text?: string }>
+            compactionId?: string
+            shadowedTokenCount?: number
+            shadowedSeqs?: unknown[]
+          }
         }
-      }
-      if (rawEvent.type === 'compaction/summary') {
-        const data = rawEvent.data
-        if (!data || !data.summary) return
+        if (rawEvent.type === 'compaction/summary') {
+          const data = rawEvent.data
+          if (!data || !data.summary) return
 
-        // Extract summary text blocks
-        const summaryText = data.summary
-          .filter((block): block is { text: string } => typeof block.text === 'string' && block.text.trim().length > 0)
-          .map(block => block.text)
-          .join('\n\n')
+          // Extract summary text blocks
+          const summaryText = data.summary
+            .filter((block): block is { text: string } => typeof block.text === 'string' && block.text.trim().length > 0)
+            .map(block => block.text)
+            .join('\n\n')
 
-        if (summaryText.length === 0) return
+          if (summaryText.length === 0) return
 
-        // 1. Episodic checkpoint preservation
-        const id = await service.saveEntry('summary', summaryText, {
-          compactionId: data.compactionId,
-          shadowedTokenCount: data.shadowedTokenCount,
-          shadowedSeqsCount: data.shadowedSeqs?.length ?? 0,
-        })
+          // 1. Episodic checkpoint preservation
+          const id = await service.saveEntry('summary', summaryText, {
+            compactionId: data.compactionId,
+            shadowedTokenCount: data.shadowedTokenCount,
+            shadowedSeqsCount: data.shadowedSeqs?.length ?? 0,
+          })
 
-        ctx.logger.info(
-          `multimodal-embed: captured compacted summary into vector store (id: ${id}, ~${data.shadowedTokenCount ?? 0} tokens saved)`,
-        )
+          ctx.logger.info(
+            `multimodal-embed: captured compacted summary into vector store (id: ${id}, ~${data.shadowedTokenCount ?? 0} tokens saved)`,
+          )
 
-        // 2. Knowledge Harvester (Tier 2 Macro Consolidation)
-        if (config.autoDistillLessonsFromCompaction) {
-          const distilledItems = distillCompactedSummary(summaryText, data.compactionId)
-          if (distilledItems.length > 0) {
-            const existingRules = await service.getEntriesByCategory('rule', 50).catch(() => [] as MemoryItem[])
-            const existingLessons = await service.getEntriesByCategory('lesson', 50).catch(() => [] as MemoryItem[])
+          // 2. Knowledge Harvester (Tier 2 Macro Consolidation)
+          if (config.autoDistillLessonsFromCompaction) {
+            const distilledItems = distillCompactedSummary(summaryText, data.compactionId)
+            if (distilledItems.length > 0) {
+              const existingRules = await service.getEntriesByCategory('rule', 50).catch(() => [] as MemoryItem[])
+              const existingLessons = await service.getEntriesByCategory('lesson', 50).catch(() => [] as MemoryItem[])
 
-            let distilledLessonsCount = 0
-            let distilledRulesCount = 0
+              let distilledLessonsCount = 0
+              let distilledRulesCount = 0
 
-            for (const item of distilledItems) {
-              if (item.category === 'rule') {
-                const raw = (item.metadata.rawRule as string | undefined) ?? item.content
-                if (!isDuplicateRule(existingRules, raw)) {
-                  await service.saveEntry('rule', item.content, item.metadata)
-                  existingRules.push({
-                    id: `rule_temp_${Date.now()}`,
-                    category: 'rule',
-                    content: item.content,
-                    score: 1.0,
-                    metadata: item.metadata,
-                    createdAt: Date.now(),
-                  })
-                  distilledRulesCount += 1
-                }
-              } else {
-                if (!isDuplicateLesson(existingLessons, item.content)) {
-                  await service.saveEntry('lesson', item.content, item.metadata)
-                  existingLessons.push({
-                    id: `lesson_temp_${Date.now()}`,
-                    category: 'lesson',
-                    content: item.content,
-                    score: 1.0,
-                    metadata: item.metadata,
-                    createdAt: Date.now(),
-                  })
-                  distilledLessonsCount += 1
+              for (const item of distilledItems) {
+                if (item.category === 'rule') {
+                  const raw = (item.metadata.rawRule as string | undefined) ?? item.content
+                  if (!isDuplicateRule(existingRules, raw)) {
+                    await service.saveEntry('rule', item.content, item.metadata)
+                    existingRules.push({
+                      id: `rule_temp_${Date.now()}`,
+                      category: 'rule',
+                      content: item.content,
+                      score: 1.0,
+                      metadata: item.metadata,
+                      createdAt: Date.now(),
+                    })
+                    distilledRulesCount += 1
+                  }
+                } else {
+                  if (!isDuplicateLesson(existingLessons, item.content)) {
+                    await service.saveEntry('lesson', item.content, item.metadata)
+                    existingLessons.push({
+                      id: `lesson_temp_${Date.now()}`,
+                      category: 'lesson',
+                      content: item.content,
+                      score: 1.0,
+                      metadata: item.metadata,
+                      createdAt: Date.now(),
+                    })
+                    distilledLessonsCount += 1
+                  }
                 }
               }
-            }
 
-            if (distilledLessonsCount > 0 || distilledRulesCount > 0) {
-              ctx.logger.info(
-                `multimodal-embed: auto-distilled from compaction: ${distilledLessonsCount} lesson(s), ${distilledRulesCount} rule(s)`,
-              )
+              if (distilledLessonsCount > 0 || distilledRulesCount > 0) {
+                ctx.logger.info(
+                  `multimodal-embed: auto-distilled from compaction: ${distilledLessonsCount} lesson(s), ${distilledRulesCount} rule(s)`,
+                )
+              }
             }
           }
         }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        ctx.logger.warn(`multimodal-embed compaction capture error: ${msg}`)
       }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
-      ctx.logger.warn(`multimodal-embed compaction capture error: ${msg}`)
-    }
+    })()
   })
 }

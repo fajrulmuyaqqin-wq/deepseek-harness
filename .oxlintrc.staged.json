@@ -13,6 +13,8 @@
     "**/.node-next-types-*/**",
     "website/.generated/**",
     "vendor/**",
+    "packages/experimental/claude-code-mods/examples/*/{hooks,tests,types}/**",
+    "packages/experimental/market/**",
     "native/**",
     "**/*.js",
     "**/*.mjs",
