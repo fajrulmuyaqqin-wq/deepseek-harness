@@ -13,15 +13,27 @@ import type { PromptAssembly, AssembleContext } from '@deepseek-ai/dsh-system-pr
 import type { PostToolDecision, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import type { UserMessage, Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { MultimodalEmbedService, MemoryCategory } from '../types.ts'
 import type { MultimodalEmbedConfig } from '../config.ts'
 import type { ToolActivator } from '../tools/activate-tool.ts'
 import { autoSniffAndSaveDirective, autoSniffAndRevokeDirective } from '../directive-sniffer.ts'
-import { extractLexicalBoosts } from '../heuristics/intent-matcher.ts'
+import { extractLexicalBoosts, extractSkillLexicalBoost } from '../heuristics/intent-matcher.ts'
 import { MarkovTransitionTracker } from '../heuristics/markov-tracker.ts'
 import { DynamicPackBucketingEngine } from '../heuristics/pack-bucketing.ts'
 
 type ToolSchema = PromptAssembly['tools'][number]
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'skill-catalog': {
+      readonly kind: 'skill-catalog'
+      readonly form?: 'catalog' | undefined
+      readonly update?: boolean | undefined
+      readonly entries: readonly { readonly name: string; readonly description: string }[]
+    }
+  }
+}
 
 interface SessionState {
   readonly stickyTools: Set<string>
@@ -30,6 +42,7 @@ interface SessionState {
   consecutiveErrors: number
   turnLock?: { key: string; activeToolNames: Set<string> } | undefined
   latestUserMessage?: { text: string; sourceKind?: string | undefined } | undefined
+  selectedSkill?: { name: string; description?: string } | undefined
 }
 
 export function registerToolRouterHook(
@@ -50,8 +63,9 @@ export function registerToolRouterHook(
   coreToolsSet.add('update_goal')
   coreToolsSet.add('get_goal')
 
-  // Cache for tool vector representations
+  // Cache for tool and skill vector representations
   const toolVectorCache = new Map<string, Float32Array>()
+  const skillVectorCache = new Map<string, Float32Array>()
 
   // Heuristic Markov Transition Tracker & Dynamic Pack Bucketing Engine
   const markovTracker = new MarkovTransitionTracker()
@@ -306,6 +320,89 @@ export function registerToolRouterHook(
         }
       }
 
+      // Intent-Driven Selective Skill Routing (Skill-RAG)
+      let matchedWinningSkill: { name: string; description?: string } | undefined
+      if (
+        config.toolRouting.enabled &&
+        config.toolRouting.skillRouting.enabled &&
+        intentText.trim().length > 0 &&
+        skillsService &&
+        typeof skillsService.list === 'function'
+      ) {
+        try {
+          const skillsList = await Promise.resolve(skillsService.list(context.scope))
+          if (Array.isArray(skillsList) && skillsList.length > 0) {
+            const intentVec = await service.embedText(intentText)
+            const scoredSkills: Array<{ skill: { name: string; description?: string }; score: number }> = []
+
+            for (const skill of skillsList) {
+              let skillVec = skillVectorCache.get(skill.name)
+              if (!skillVec) {
+                const textToEmbed = `${skill.name}: ${skill.description ?? ''}`
+                skillVec = await service.embedText(textToEmbed)
+                skillVectorCache.set(skill.name, skillVec)
+              }
+
+              const baseScore = service.cosineSimilarity(intentVec, skillVec)
+              const lexBoost = extractSkillLexicalBoost(intentText, skill)
+              const fusedScore = baseScore + lexBoost
+
+              if (fusedScore >= config.toolRouting.skillRouting.similarityThreshold) {
+                scoredSkills.push({ skill, score: fusedScore })
+              }
+            }
+
+            if (scoredSkills.length > 0) {
+              scoredSkills.sort((a, b) => b.score - a.score)
+              const topK = scoredSkills.slice(0, config.toolRouting.skillRouting.maxActiveSkills)
+              const primarySkill = topK[0]?.skill
+              if (primarySkill) {
+                matchedWinningSkill = primarySkill
+                if (sessionState) {
+                  sessionState.selectedSkill = primarySkill
+                }
+
+                // Deterministic prompt section injection
+                const skillEntriesProse = topK.map(s => `- \`${s.skill.name}\`: ${s.skill.description ?? ''}`).join('\n')
+                assembly.sections.push({
+                  name: 'active-specialized-skill',
+                  text: [
+                    '## Specialized Skill Recommendation',
+                    'Based on your current task intent, the following specialized skill has been matched:',
+                    skillEntriesProse,
+                    '',
+                    `Action: Call \`skill({ name: "${primarySkill.name}" })\` to load full domain instructions before taking task actions, or follow its guidelines.`,
+                  ].join('\n'),
+                  interpolate: false,
+                })
+
+                // Auto-prime full instructions directly if configured
+                if (config.toolRouting.skillRouting.autoPrimeInstructions && typeof (skillsService as { get?: unknown }).get === 'function') {
+                  try {
+                    const loadedSkill = await (skillsService as {
+                      get: (name: string, lookup?: unknown) => Promise<{ content?: string } | undefined>
+                    }).get(primarySkill.name, { scope: context.scope })
+                    if (loadedSkill?.content) {
+                      assembly.sections.push({
+                        name: 'active-skill-instructions',
+                        text: `## Active Skill Instructions (${primarySkill.name})\n<skill_instructions>\n${loadedSkill.content}\n</skill_instructions>`,
+                        interpolate: false,
+                      })
+                    }
+                  } catch (primeErr: unknown) {
+                    ctx.logger.debug(`multimodal-embed: auto-priming skill ${primarySkill.name} deferred: ${String(primeErr)}`)
+                  }
+                }
+              }
+            } else if (sessionState) {
+              sessionState.selectedSkill = undefined
+            }
+          }
+        } catch (skillMatchErr: unknown) {
+          ctx.logger.warn(`multimodal-embed: skill routing matching failed: ${String(skillMatchErr)}`)
+        }
+      }
+
       if (!config.toolRouting.enabled) {
         // Tool routing / dynamic pruning is disabled; preserve all registered tools
         return await next()
@@ -419,6 +516,10 @@ export function registerToolRouterHook(
       for (const tool of coreTools) qualifyingToolNames.add(tool.name)
       for (const tool of stickyActiveTools) qualifyingToolNames.add(tool.name)
 
+      if (matchedWinningSkill) {
+        qualifyingToolNames.add('skill')
+      }
+
       for (const sc of scoredCandidates) {
         if (sc.score >= config.toolRouting.similarityThreshold) {
           qualifyingToolNames.add(sc.tool.name)
@@ -473,6 +574,7 @@ export function registerToolRouterHook(
     } else if (event.type === 'turn/end') {
       state.consecutiveErrors = 0
       state.turnLock = undefined
+      state.selectedSkill = undefined
       if (config.toolRouting.heuristics.markovEnabled) {
         markovTracker.recordTurnEnd(
           sid,
@@ -586,6 +688,67 @@ export function registerToolRouterHook(
     }
 
     return downstream
+  })
+
+  // Selective Skill Catalog Filter (agent/pre-step waterfall)
+  ctx.on('agent/pre-step', async ({ agent }, next): Promise<PreStepDecision> => {
+    const decision = await next()
+    if (decision.kind === 'reject') return decision
+    if (!config.toolRouting.enabled || !config.toolRouting.skillRouting.enabled) {
+      return decision
+    }
+
+    const sid = agent.session.id ? String(agent.session.id) : lastActiveSessionId
+    const state = sid ? sessionStates.get(sid) : undefined
+    const selectedSkill = state?.selectedSkill
+
+    const hasSkillCatalog = decision.messages.some(msg => msg.source.kind === 'skill-catalog')
+    if (!hasSkillCatalog) {
+      return decision
+    }
+
+    const prunedMessages = decision.messages.map((msg) => {
+      if (msg.source.kind !== 'skill-catalog') return msg
+      const catalogSource = msg.source as { kind: 'skill-catalog'; entries?: Array<{ name: string; description: string }> }
+      if (!Array.isArray(catalogSource.entries)) return msg
+
+      if (selectedSkill) {
+        // Filter catalog to ONLY include the single selected skill!
+        const matchingEntry = catalogSource.entries.find(e => e.name === selectedSkill.name)
+        const entries = matchingEntry
+          ? [matchingEntry]
+          : [{ name: selectedSkill.name, description: selectedSkill.description ?? '' }]
+        return createUserMessage({
+          content: [{
+            type: 'text',
+            text: [
+              '<system-reminder>',
+              'A skill is a reusable set of task-specific instructions. The following skill is available in this session:',
+              '',
+              '<available_skills>',
+              `- \`${entries[0]?.name}\`: ${entries[0]?.description ?? ''}`,
+              '</available_skills>',
+              '',
+              `If the task clearly matches this skill, call the \`skill\` tool with \`name: "${entries[0]?.name}"\` before taking task actions.`,
+              '</system-reminder>',
+            ].join('\n'),
+          }],
+          source: {
+            kind: 'skill-catalog',
+            form: 'catalog',
+            entries,
+          },
+        })
+      } else {
+        // No specialized skill matched: eliminate the catalog message to avoid dumping 50 skills!
+        return undefined
+      }
+    }).filter((m): m is UserMessage => m !== undefined)
+
+    return {
+      ...decision,
+      messages: prunedMessages,
+    }
   })
 
   // Clean up session state on session disposal

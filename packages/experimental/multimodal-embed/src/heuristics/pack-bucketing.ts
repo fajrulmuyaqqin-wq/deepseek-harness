@@ -39,6 +39,7 @@ const BASE_DEV_TOOLS = [
   'lsp',
   'todo_write',
   'present',
+  'skill',
 ]
 
 const BASE_WEB_TOOLS = [

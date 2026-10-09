@@ -23,6 +23,13 @@ export interface ToolRerankerConfig {
   topKCandidates: number
 }
 
+export interface SkillRoutingConfig {
+  enabled: boolean
+  similarityThreshold: number
+  maxActiveSkills: number
+  autoPrimeInstructions: boolean
+}
+
 export interface ToolRoutingConfig {
   enabled: boolean
   policy: 'turn-boundary' | 'step-boundary'
@@ -33,6 +40,7 @@ export interface ToolRoutingConfig {
   heuristics: ToolHeuristicsConfig
   bucketing: ToolBucketingConfig
   reranker: ToolRerankerConfig
+  skillRouting: SkillRoutingConfig
 }
 
 export interface MemoryRecallConfig {
@@ -77,6 +85,16 @@ export const toolRerankerSchema = z.object({
   topKCandidates: z.number().step(1).min(2).max(20).default(8).description('Number of Stage-1 candidates passed to Cross-Encoder'),
 })
 
+export const skillRoutingSchema = z.object({
+  enabled: z.boolean().default(true).description('Enable intent-driven selective skill routing'),
+  similarityThreshold: z.number().min(0).max(1).default(0.70)
+    .description('Minimum similarity score to admit a specialized skill'),
+  maxActiveSkills: z.number().step(1).min(1).max(5).default(1)
+    .description('Maximum number of active skills selected (default: 1)'),
+  autoPrimeInstructions: z.boolean().default(false)
+    .description('Whether to prime full skill instructions directly into prompt'),
+})
+
 export const toolRoutingSchema = z.object({
   enabled: z.boolean().default(true).description('Enable semantic tool and skill pruning'),
   policy: z.union(['turn-boundary' as const, 'step-boundary' as const]).default('turn-boundary')
@@ -85,7 +103,7 @@ export const toolRoutingSchema = z.object({
     .description('Tools that are always available and never pruned'),
   maxDynamicTools: z.number().step(1).min(1).default(5)
     .description('Maximum number of domain tools admitted per turn'),
-  maxDynamicSkills: z.number().step(1).min(0).default(2)
+  maxDynamicSkills: z.number().step(1).min(0).default(1)
     .description('Maximum number of specialized skills admitted per turn'),
   similarityThreshold: z.number().min(0).max(1).default(0.65)
     .description('Minimum cosine similarity required to admit a dynamic tool or skill'),
@@ -102,6 +120,12 @@ export const toolRoutingSchema = z.object({
   reranker: toolRerankerSchema.default({
     enabled: false,
     topKCandidates: 8,
+  }),
+  skillRouting: skillRoutingSchema.default({
+    enabled: true,
+    similarityThreshold: 0.70,
+    maxActiveSkills: 1,
+    autoPrimeInstructions: false,
   }),
 })
 
@@ -148,7 +172,7 @@ export const Config = z.object({
     policy: 'turn-boundary',
     coreTools: ['read_file', 'ask_question', 'view_file'],
     maxDynamicTools: 5,
-    maxDynamicSkills: 2,
+    maxDynamicSkills: 1,
     similarityThreshold: 0.65,
   }),
 })

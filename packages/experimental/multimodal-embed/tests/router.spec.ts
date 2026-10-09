@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { writeFileSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -673,20 +673,20 @@ describe('Turn-Boundary Tool-RAG & Passive Memory Recall (on-assemble)', () => {
 
     await ctx.parallel('session/event', fakeSession as never, fakeEvent as never)
 
-    // Wait a brief tick for async handler to settle
-    await new Promise(r => setTimeout(r, 100))
+    // Wait deterministically for async background compaction indexing and distillation to settle
+    await vi.waitFor(async () => {
+      const storedSummaries = await service.getEntriesByCategory('summary', 10)
+      expect(storedSummaries.length).toBe(1)
+      expect(storedSummaries[0]?.metadata?.compactionId).toBe('compaction-event-1')
 
-    const storedSummaries = await service.getEntriesByCategory('summary', 10)
-    expect(storedSummaries.length).toBe(1)
-    expect(storedSummaries[0]?.metadata?.compactionId).toBe('compaction-event-1')
+      const storedLessons = await service.getEntriesByCategory('lesson', 10)
+      expect(storedLessons.length).toBe(3)
+      expect(storedLessons.some(l => l.content.includes('exactOptionalPropertyTypes'))).toBe(true)
 
-    const storedLessons = await service.getEntriesByCategory('lesson', 10)
-    expect(storedLessons.length).toBeGreaterThan(0)
-    expect(storedLessons.some(l => l.content.includes('exactOptionalPropertyTypes'))).toBe(true)
-
-    const storedRules = await service.getEntriesByCategory('rule', 10)
-    expect(storedRules.length).toBeGreaterThan(0)
-    expect(storedRules.some(r => r.content.includes('development'))).toBe(true)
+      const storedRules = await service.getEntriesByCategory('rule', 10)
+      expect(storedRules.length).toBe(1)
+      expect(storedRules.some(r => r.content.includes('development'))).toBe(true)
+    }, { timeout: 6000, interval: 50 })
 
     service.teardown()
   })

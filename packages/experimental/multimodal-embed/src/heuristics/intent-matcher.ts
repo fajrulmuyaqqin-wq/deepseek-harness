@@ -107,3 +107,56 @@ export function extractLexicalBoosts(text: string, defaultBoost = 0.40): IntentM
 
   return { boosts, matchedDomains }
 }
+
+export interface SkillCandidateMeta {
+  readonly name: string
+  readonly description?: string | undefined
+}
+
+/**
+ * Computes deterministic zero-latency lexical score boost for a candidate skill.
+ *
+ * @param intentText The incoming user intent or prompt text.
+ * @param skill The candidate skill summary.
+ * @param defaultBoost The score boost to apply when full name matches (default: 0.50).
+ * @returns Lexical boost amount to add to dense vector similarity.
+ */
+export function extractSkillLexicalBoost(
+  intentText: string,
+  skill: SkillCandidateMeta,
+  defaultBoost = 0.50,
+): number {
+  if (!intentText || intentText.trim().length === 0) return 0
+
+  const lowerText = intentText.toLowerCase()
+  const lowerName = skill.name.toLowerCase()
+
+  // 1. Exact skill name mention (e.g. "bigquery-sql" or "/bigquery-sql")
+  const exactRegex = new RegExp(`(?:^|[\\s/_\`"'])${escapeRegex(lowerName)}(?:$|[\\s/_\`"'])`, 'i')
+  if (exactRegex.test(lowerText)) {
+    return defaultBoost
+  }
+
+  // 2. Token overlap: break skill name into distinctive tokens (min 3 chars)
+  const tokens = lowerName.split(/[-_]+/).filter(t => t.length >= 3 && !['basics', 'database', 'guide', 'plugin', 'tool'].includes(t))
+  if (tokens.length > 0) {
+    const matchedTokens = tokens.filter((t) => {
+      const tokenRegex = new RegExp(`\\b${escapeRegex(t)}`, 'i')
+      return tokenRegex.test(lowerText)
+    })
+
+    if (matchedTokens.length === tokens.length) {
+      // All distinctive tokens present in prompt
+      return defaultBoost * 0.85
+    } else if (matchedTokens.length >= 1 && tokens.length > 1) {
+      // Partial token match
+      return defaultBoost * 0.40 * (matchedTokens.length / tokens.length)
+    }
+  }
+
+  return 0
+}
+
+function escapeRegex(str: string): string {
+  return str.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
