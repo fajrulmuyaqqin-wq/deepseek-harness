@@ -14,7 +14,7 @@ import { sep } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView, SearchResultView, ToolResult } from '@deepseek-ai/dsh-tools'
 import type { SpillRef } from '@deepseek-ai/dsh-spill'
-import { isSensitiveSearchTarget, runRipgrep, toWorkdirRelative, trySaveFormattedResult } from './search-core.ts'
+import { runRipgrep, toWorkdirRelative, trySaveFormattedResult } from './search-core.ts'
 import { globSearchMeta, searchViewFromMeta } from './presentation.ts'
 import { acceptedDirectCallValue } from './direct-call.ts'
 
@@ -343,7 +343,6 @@ export function applyGlobTool(ctx: Context, caps: GlobToolCaps): void {
       for (const line of run.stdout.split('\n')) {
         if (line.length === 0) continue
         const displayPath = toWorkdirRelative(line, run.workdir)
-        if (run.mode !== 'danger-full-access' && isSensitiveSearchTarget(displayPath)) continue
         all.push(displayPath)
       }
       return { root, paths: all }
