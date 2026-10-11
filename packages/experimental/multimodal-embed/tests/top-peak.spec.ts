@@ -165,6 +165,32 @@ describe('Top-Peak Tool-RAG Heuristics & Dynamic Pack Bucketing', () => {
       expect(devIndexEdit).toBeLessThan(devIndexRead)
       expect(devIndexRead).toBeLessThan(devIndexWrite)
     })
+
+    it('generates clear LLM guidance explaining active and dormant packs and activate_tool', () => {
+      const engine = new DynamicPackBucketingEngine()
+      const allTools = [
+        { name: 'manage_memory' },
+        { name: 'activate_tool' },
+        { name: 'bash' },
+        { name: 'read' },
+        { name: 'web_search' },
+        { name: 'web_fetch' },
+        { name: 'invoke_subagent' },
+      ]
+
+      const detailed = engine.resolveAdmittedToolsDetailed(allTools, new Set(['bash']), new Set(['dev']))
+      expect(detailed.activePackIds.has('core')).toBe(true)
+      expect(detailed.activePackIds.has('dev')).toBe(true)
+      expect(detailed.dormantPackIds.has('web')).toBe(true)
+
+      const guidance = detailed.guidancePrompt
+      expect(guidance).toContain('## Tool Domain Packs & Capability Guidance')
+      expect(guidance).toContain('**`core`** (Active')
+      expect(guidance).toContain('**`dev`** (Active')
+      expect(guidance).toContain('### Dormant Packs (Available on-demand):')
+      expect(guidance).toContain('**`web`**')
+      expect(guidance).toContain('activate_tool({ tools: ["<tool_name>"] })')
+    })
   })
 
   describe('End-to-End System Integration in on-assemble', () => {
@@ -232,9 +258,227 @@ describe('Top-Peak Tool-RAG Heuristics & Dynamic Pack Bucketing', () => {
 
       // Blender should NOT be admitted
       expect(admittedToolNames).not.toContain('mcp__blender__generate_3d')
+
+      // Prompt sections should contain tool domain packs guidance for the LLM
+      const guidanceSection = assembly.sections.find(s => s.name === 'tool-domain-packs-guidance')
+      expect(guidanceSection).toBeDefined()
+      expect(guidanceSection?.text).toContain('## Tool Domain Packs & Capability Guidance')
+      expect(guidanceSection?.text).toContain('**`dev`** (Active')
+      expect(guidanceSection?.text).toContain('mcp:blender')
+    })
+
+    it('keeps non-core packs dormant and prunes dynamic tools when user sends generic greeting', async () => {
+      ctx = new Context()
+      service = new MultimodalEmbeddingService(ctx, Config({}))
+      ctx.set('multimodalEmbed', service)
+
+      const config = Config({
+        toolRouting: {
+          enabled: true,
+          policy: 'turn-boundary',
+          coreTools: ['ask_user_question', 'activate_tool'],
+          maxDynamicTools: 2,
+          maxDynamicSkills: 2,
+          similarityThreshold: 0.75,
+          heuristics: {
+            enabled: true,
+            boostWeight: 0.45,
+            markovEnabled: true,
+            markovBiasWeight: 0.3,
+          },
+          bucketing: {
+            enabled: true,
+            toolPacks: {},
+          },
+        },
+      })
+
+      registerToolRouterHook(ctx, service, config)
+
+      const assembly: PromptAssembly = {
+        sections: [],
+        contexts: [],
+        tools: [
+          { name: 'ask_user_question', description: 'Ask question', parameters: {} },
+          { name: 'activate_tool', description: 'Activate tool', parameters: {} },
+          { name: 'bash', description: 'Execute bash shell command', parameters: {} },
+          { name: 'read', description: 'Read file contents', parameters: {} },
+          { name: 'write', description: 'Write file contents', parameters: {} },
+          { name: 'get_goal', description: 'Get current goal', parameters: {} },
+          { name: 'create_goal', description: 'Create new goal', parameters: {} },
+          { name: 'mcp__blender__generate_3d', description: 'Blender 3D mesh', parameters: {} },
+          { name: 'subagent', description: 'Delegate to subagent', parameters: {} },
+        ],
+        variables: {
+          userPrompt: 'hai',
+        },
+      }
+
+      const dummySession = { id: 'sess_greeting_prune' }
+      const context: AssembleContext = { agent: { session: dummySession } as never }
+
+      await ctx.parallel('system-prompt/assemble', assembly, context, async () => assembly)
+
+      const admittedNames = assembly.tools.map(t => t.name)
+
+      // Only core tools admitted!
+      expect(admittedNames).toContain('ask_user_question')
+      expect(admittedNames).toContain('activate_tool')
+
+      // Dev, Goal, Blender, and Team tools MUST be pruned/dormant!
+      expect(admittedNames).not.toContain('bash')
+      expect(admittedNames).not.toContain('read')
+      expect(admittedNames).not.toContain('get_goal')
+      expect(admittedNames).not.toContain('create_goal')
+      expect(admittedNames).not.toContain('mcp__blender__generate_3d')
+      expect(admittedNames).not.toContain('subagent')
+
+      const guidanceSection = assembly.sections.find(s => s.name === 'tool-domain-packs-guidance')
+      expect(guidanceSection).toBeDefined()
+      expect(guidanceSection?.text).toContain('**`core`** (Active')
+      expect(guidanceSection?.text).toContain('**`goal`**')
+      expect(guidanceSection?.text).toContain('**`dev`**')
+    })
+
+    it('shields exit_plan_mode from being admitted when plan mode is inactive and autoPromote is disabled', async () => {
+      ctx = new Context()
+      service = new MultimodalEmbeddingService(ctx, Config({}))
+      ctx.set('multimodalEmbed', service)
+
+      const config = Config({
+        toolRouting: {
+          enabled: true,
+          autoPromotePlanMode: false,
+          similarityThreshold: 0.75,
+        },
+      })
+
+      registerToolRouterHook(ctx, service, config)
+
+      const assembly: PromptAssembly = {
+        sections: [],
+        contexts: [],
+        tools: [
+          { name: 'ask_user_question', description: 'Ask question', parameters: {} },
+          { name: 'activate_tool', description: 'Activate tool', parameters: {} },
+          { name: 'exit_plan_mode', description: 'Present plan for user review and leave plan mode', parameters: {} },
+          { name: 'bash', description: 'Bash shell', parameters: {} },
+        ],
+        variables: {
+          userPrompt: 'coba buatkan plan untuk membuat web canggih end to end',
+        },
+      }
+
+      const dummySession = { id: 'sess_plan_inactive' }
+      const context: AssembleContext = { agent: { session: dummySession } as never }
+
+      await ctx.parallel('system-prompt/assemble', assembly, context, async () => assembly)
+
+      const admittedNames = assembly.tools.map(t => t.name)
+      // exit_plan_mode MUST be shielded/pruned to prevent fatal ToolCallError
+      expect(admittedNames).not.toContain('exit_plan_mode')
+
+      service.teardown()
+    })
+
+    it('automatically promotes session to plan mode when user asks for a plan casually', async () => {
+      ctx = new Context()
+      service = new MultimodalEmbeddingService(ctx, Config({}))
+      ctx.set('multimodalEmbed', service)
+
+      let promoted = false
+      const fakePlanMode = {
+        get: () => ({ active: promoted }),
+        set: (_agent: unknown, active: boolean) => {
+          promoted = active
+        },
+      }
+      ctx.provide('planMode', fakePlanMode)
+
+      const config = Config({
+        toolRouting: {
+          enabled: true,
+          autoPromotePlanMode: true,
+          similarityThreshold: 0.75,
+        },
+      })
+
+      registerToolRouterHook(ctx, service, config)
+
+      const assembly: PromptAssembly = {
+        sections: [],
+        contexts: [],
+        tools: [
+          { name: 'ask_user_question', description: 'Ask question', parameters: {} },
+          { name: 'activate_tool', description: 'Activate tool', parameters: {} },
+          { name: 'exit_plan_mode', description: 'Present plan for user review and leave plan mode', parameters: {} },
+          { name: 'bash', description: 'Bash shell', parameters: {} },
+        ],
+        variables: {
+          userPrompt: 'coba buatkan plan untuk membuat web canggih end to end',
+        },
+      }
+
+      const dummySession = { id: 'sess_plan_casual' }
+      const context: AssembleContext = { agent: { session: dummySession } as never }
+
+      await ctx.parallel('system-prompt/assemble', assembly, context, async () => assembly)
+
+      expect(promoted).toBe(true)
+      const admittedNames = assembly.tools.map(t => t.name)
+      expect(admittedNames).toContain('exit_plan_mode')
+
+      service.teardown()
+    })
+
+    it('admits exit_plan_mode when plan mode is active for the session', async () => {
+      ctx = new Context()
+      service = new MultimodalEmbeddingService(ctx, Config({}))
+      ctx.set('multimodalEmbed', service)
+
+      const fakePlanMode = {
+        get: () => ({ active: true }),
+      }
+      ctx.provide('planMode', fakePlanMode)
+
+      const config = Config({
+        toolRouting: {
+          enabled: true,
+          similarityThreshold: 0.75,
+        },
+      })
+
+      registerToolRouterHook(ctx, service, config)
+
+      const assembly: PromptAssembly = {
+        sections: [],
+        contexts: [],
+        tools: [
+          { name: 'ask_user_question', description: 'Ask question', parameters: {} },
+          { name: 'activate_tool', description: 'Activate tool', parameters: {} },
+          { name: 'exit_plan_mode', description: 'Present plan for user review and leave plan mode', parameters: {} },
+        ],
+        variables: {
+          userPrompt: 'here is my plan review',
+        },
+      }
+
+      const dummySession = { id: 'sess_plan_active' }
+      const context: AssembleContext = { agent: { session: dummySession } as never }
+
+      await ctx.parallel('system-prompt/assemble', assembly, context, async () => assembly)
+
+      const admittedNames = assembly.tools.map(t => t.name)
+      expect(admittedNames).toContain('exit_plan_mode')
+
+      service.teardown()
     })
 
     it('executes Stage-2 cross-encoder reranking to accurately rank candidates', async () => {
+      ctx = new Context()
+      service = new MultimodalEmbeddingService(ctx, Config({}))
+      ctx.set('multimodalEmbed', service)
+
       const candidates = [
         { id: 'bash', text: 'bash: execute shell command scripts' },
         { id: 'web_search', text: 'web_search: search for recent information across the web and news' },
@@ -247,6 +491,53 @@ describe('Top-Peak Tool-RAG Heuristics & Dynamic Pack Bucketing', () => {
       // web_search should be ranked first with highest cross score
       expect(results[0]?.id).toBe('web_search')
       expect(results[0]?.score).toBeGreaterThan(results[1]?.score ?? 0)
+
+      service.teardown()
+    })
+
+    it('purges raw agent-instructions dump from inbox to enforce Single Source of Truth', async () => {
+      ctx = new Context()
+      service = new MultimodalEmbeddingService(ctx, Config({}))
+      ctx.set('multimodalEmbed', service)
+
+      const config = Config({
+        toolRouting: {
+          enabled: true,
+        },
+      })
+
+      registerToolRouterHook(ctx, service, config)
+
+      const removedIds: string[] = []
+      const fakeInbox = {
+        nextStep: [
+          { id: 'msg-inst-1', source: { kind: 'agent-instructions' }, content: [{ type: 'text', text: 'raw 64KB dump' }] },
+          { id: 'msg-user-1', source: { kind: 'user' }, content: [{ type: 'text', text: 'normal message' }] },
+        ],
+        remove: (id: string) => {
+          removedIds.push(id)
+        },
+      }
+
+      const assembly: PromptAssembly = {
+        sections: [],
+        contexts: [],
+        tools: [],
+        variables: { userPrompt: 'test prompt' },
+      }
+
+      const context: AssembleContext = {
+        agent: {
+          session: { id: 'sess_anti_duplication' },
+          inbox: fakeInbox,
+        } as never,
+      }
+
+      await ctx.parallel('system-prompt/assemble', assembly, context, async () => assembly)
+
+      // The raw agent-instructions message must be purged!
+      expect(removedIds).toContain('msg-inst-1')
+      expect(removedIds).not.toContain('msg-user-1')
 
       service.teardown()
     })

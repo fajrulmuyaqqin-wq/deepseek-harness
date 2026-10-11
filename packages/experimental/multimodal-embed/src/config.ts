@@ -37,6 +37,7 @@ export interface ToolRoutingConfig {
   maxDynamicTools: number
   maxDynamicSkills: number
   similarityThreshold: number
+  autoPromotePlanMode: boolean
   heuristics: ToolHeuristicsConfig
   bucketing: ToolBucketingConfig
   reranker: ToolRerankerConfig
@@ -99,14 +100,16 @@ export const toolRoutingSchema = z.object({
   enabled: z.boolean().default(true).description('Enable semantic tool and skill pruning'),
   policy: z.union(['turn-boundary' as const, 'step-boundary' as const]).default('turn-boundary')
     .description('Turn-boundary preserves LLM prompt prefix cache; step-boundary filters every step'),
-  coreTools: z.array(z.string()).default(['read_file', 'ask_question', 'view_file'])
+  coreTools: z.array(z.string()).default(['ask_user_question', 'activate_tool'])
     .description('Tools that are always available and never pruned'),
   maxDynamicTools: z.number().step(1).min(1).default(5)
     .description('Maximum number of domain tools admitted per turn'),
   maxDynamicSkills: z.number().step(1).min(0).default(1)
     .description('Maximum number of specialized skills admitted per turn'),
-  similarityThreshold: z.number().min(0).max(1).default(0.65)
+  similarityThreshold: z.number().min(0).max(1).default(0.75)
     .description('Minimum cosine similarity required to admit a dynamic tool or skill'),
+  autoPromotePlanMode: z.boolean().default(true)
+    .description('Automatically promote session to plan mode when user prompt requests formal planning'),
   heuristics: toolHeuristicsSchema.default({
     enabled: true,
     boostWeight: 0.4,

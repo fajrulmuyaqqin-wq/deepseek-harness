@@ -111,14 +111,16 @@ export function apply(ctx: Context): void {
         program.error(`error: ${(error as Error).message}`)
       }
     }
-    ctx.provide(WEB_STARTUP_SERVICE, {
+    const startup = {
       openBrowser: options.open,
       ...options.host !== undefined && { host: options.host },
       ...options.port !== undefined && { port: Number(options.port) },
       ...options.publicUrl !== undefined && { publicUrl: options.publicUrl },
       ...tls !== undefined && { tls },
       trustedHosts: options.trustedHost ?? [],
-    } satisfies WebStartupValues)
+    } satisfies WebStartupValues
+    ctx.provide(WEB_STARTUP_SERVICE, startup)
+    ctx.provide('webRuntime', startup)
   })
   parseCmdline(ctx, program)
 }

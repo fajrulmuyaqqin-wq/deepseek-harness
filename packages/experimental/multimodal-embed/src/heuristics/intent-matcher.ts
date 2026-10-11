@@ -34,6 +34,7 @@ const WEB_PATTERN = /https?:\/\/[^\s]+|\b(?:browsing|cari di web|search web|fetc
 const MEMORY_PATTERN = /\b(?:ingat|aturan|catat ke memori|lupakan|hapus aturan|hapus memori|save rule|save lesson|ingatan|preferensi)\b/i
 const MEDIA_3D_PATTERN = /\b(?:blender|3d|render|mesh|obj|fbx|gltf|tekstur|scene 3d)\b|\.(?:blend|png|jpe?g|webp|wav|mp3)\b/i
 const TEAM_PATTERN = /\b(?:subagent|sub-agent|delegasikan|delegasi|spawn teammate|rekan satu tim|task tim|tim bersama|koordinasi)\b/i
+const GOAL_PATTERN = /\b(?:\/goal|goal|tujuan|target|objektif|objective|capaian)\b/i
 
 /**
  * Extracts lexical cues and produces deterministic score boosts for tool candidates.
@@ -103,6 +104,14 @@ export function extractLexicalBoosts(text: string, defaultBoost = 0.40): IntentM
     boosts.set('send_message', defaultBoost)
     boosts.set('team_task_create', defaultBoost)
     boosts.set('team_task_list', defaultBoost)
+  }
+
+  // 7. Goal & Objective Domain
+  if (GOAL_PATTERN.test(text)) {
+    matchedDomains.add('goal')
+    boosts.set('get_goal', defaultBoost)
+    boosts.set('create_goal', defaultBoost)
+    boosts.set('update_goal', defaultBoost)
   }
 
   return { boosts, matchedDomains }

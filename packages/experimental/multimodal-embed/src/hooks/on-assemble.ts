@@ -57,11 +57,7 @@ export function registerToolRouterHook(
   coreToolsSet.add('save_lesson')
   coreToolsSet.add('save_rule')
   coreToolsSet.add('activate_tool')
-  coreToolsSet.add('job_output')
-  coreToolsSet.add('job_list')
-  coreToolsSet.add('create_goal')
-  coreToolsSet.add('update_goal')
-  coreToolsSet.add('get_goal')
+  coreToolsSet.add('ask_user_question')
 
   // Cache for tool and skill vector representations
   const toolVectorCache = new Map<string, Float32Array>()
@@ -139,13 +135,48 @@ export function registerToolRouterHook(
       }
       const sessionState = sessionId ? getOrCreateSessionState(sessionId) : undefined
 
-      // Extract turn intent from variables, context, or latest session message
+      // 0. Single Source of Truth / Anti-Duplikasi State Guard (Pilar III.2)
+      // Intercept and purge any raw static dump emitted by `agent-instructions`
+      // from the inbox to guarantee zero duplicate state and prevent 64KB token dumps.
+      if (context.agent?.inbox) {
+        const inbox = context.agent.inbox
+        const instructionMessages = inbox.nextStep.filter(
+          msg => (msg.source as { kind?: string } | undefined)?.kind === 'agent-instructions',
+        )
+        for (const msg of instructionMessages) {
+          inbox.remove(msg.id)
+        }
+      }
+
+      // Extract turn intent from variables, context, or latest genuine human message
       let intentText = assembly.variables.userPrompt ?? assembly.variables.topic ?? ''
       let incomingSourceKind: string | undefined
 
       if (intentText.trim().length === 0 && sessionState?.latestUserMessage) {
         intentText = sessionState.latestUserMessage.text
         incomingSourceKind = sessionState.latestUserMessage.sourceKind
+      }
+
+      if (intentText.trim().length === 0 && context.agent?.session) {
+        // oxlint-disable-next-line typescript/no-deprecated -- Fallback history scan when sessionState is absent.
+        const events = context.agent.session.snapshotEvents()
+        for (let i = events.length - 1; i >= 0; i--) {
+          const ev = events[i]
+          if (ev?.type === 'user/message') {
+            const srcKind = (ev.data.source as { kind?: string } | undefined)?.kind
+            if (srcKind !== 'runtime-context' && srcKind !== 'time-context') {
+              const txt = ev.data.content
+                .filter((c: { type: string; text?: string }): c is { type: 'text'; text: string } => c.type === 'text')
+                .map((c: { type: 'text'; text: string }) => c.text)
+                .join('\n')
+              if (txt.trim().length > 0) {
+                intentText = txt
+                incomingSourceKind = srcKind
+                break
+              }
+            }
+          }
+        }
       }
 
       // Auto-sniff explicit directives from intentText before querying active rules
@@ -289,6 +320,59 @@ export function registerToolRouterHook(
             sessionState.stickyTools.add('schedule_list')
           }
         }
+      }
+
+      // Check whether plan mode is active for this session
+      let isPlanModeActive = false
+      const projections = ctx.get('sessionProjections') as {
+        stateOf?: (session: unknown, key: string) => { active?: boolean; goal?: { id?: string } | null } | undefined
+      } | undefined
+      if (context.agent?.session && projections?.stateOf) {
+        const planState = projections.stateOf(context.agent.session, 'plan')
+        if (planState?.active) {
+          isPlanModeActive = true
+        }
+      }
+      if (!isPlanModeActive && context.agent && ctx.get('planMode')) {
+        try {
+          const pm = ctx.get('planMode') as { get?: (agent: unknown) => { active: boolean }; set?: (agent: unknown, active: boolean) => void } | undefined
+          if (pm?.get && pm.get(context.agent).active) {
+            isPlanModeActive = true
+          }
+        } catch {}
+      }
+
+      // Auto-promote to plan mode if user intent explicitly requests formulating a plan
+      const FORMAL_PLAN_INTENT_PATTERN = new RegExp(
+        [
+          '(?:coba\\s+)?(?:buat(?:kan)?|bikin|susun|rancang)\\s+(?:sebuah\\s+)?(?:plan|rencana)',
+          '(?:create|make|draft|generate|write)\\s+(?:a\\s+)?plan',
+          'plan\\s+out',
+        ].map(p => `\\b${p}\\b`).join('|'),
+        'i',
+      )
+
+      if (
+        config.toolRouting.autoPromotePlanMode &&
+        !isPlanModeActive &&
+        FORMAL_PLAN_INTENT_PATTERN.test(intentText) &&
+        context.agent &&
+        ctx.get('planMode')
+      ) {
+        try {
+          const pm = ctx.get('planMode') as { set?: (agent: unknown, active: boolean) => void } | undefined
+          if (pm?.set) {
+            pm.set(context.agent, true)
+            isPlanModeActive = true
+          }
+        } catch (planSetErr: unknown) {
+          ctx.logger.debug(`multimodal-embed: plan mode auto-promotion deferred: ${String(planSetErr)}`)
+        }
+      }
+
+      // If plan mode is inactive, exit_plan_mode cannot be called; prune it from assembly.tools
+      if (!isPlanModeActive) {
+        assembly.tools = assembly.tools.filter(t => t.name !== 'exit_plan_mode')
       }
 
       const allTools = assembly.tools
@@ -436,7 +520,7 @@ export function registerToolRouterHook(
       const activatedSet = sessionState?.dynamicallyActivatedTools ?? new Set<string>()
 
       for (const tool of allTools) {
-        if (coreToolsSet.has(tool.name)) {
+        if (coreToolsSet.has(tool.name) || (tool.name === 'exit_plan_mode' && isPlanModeActive)) {
           coreTools.push(tool)
         } else if (stickySet.has(tool.name) || activatedSet.has(tool.name)) {
           stickyActiveTools.push(tool)
@@ -449,6 +533,20 @@ export function registerToolRouterHook(
       const lexicalResult = config.toolRouting.heuristics.enabled
         ? extractLexicalBoosts(intentText, config.toolRouting.heuristics.boostWeight)
         : { boosts: new Map<string, number>(), matchedDomains: new Set<string>() }
+
+      // Activate goal pack automatically if session has an active goal
+      if (context.agent?.session && projections?.stateOf) {
+        const goalState = projections.stateOf(context.agent.session, 'goal')
+        if (goalState?.goal) {
+          ;(lexicalResult.matchedDomains as Set<string>).add('goal')
+        }
+      }
+
+      // Activate plan and goal packs automatically if session is in plan mode
+      if (isPlanModeActive) {
+        ;(lexicalResult.matchedDomains as Set<string>).add('plan')
+        ;(lexicalResult.matchedDomains as Set<string>).add('goal')
+      }
 
       // Extract Markov temporal transition boosts (Tier 1)
       const markovBoosts = (config.toolRouting.heuristics.markovEnabled && sessionId)
@@ -528,9 +626,18 @@ export function registerToolRouterHook(
 
       let activeTools: ToolSchema[]
 
-      // Tier 2: Dynamic Pack Bucketing (Cache Shielding)
+      // Tier 2: Dynamic Pack Bucketing (Cache Shielding & LLM Pack Guidance)
       if (config.toolRouting.bucketing.enabled) {
-        activeTools = packBucketing.resolveAdmittedTools(allTools, qualifyingToolNames, lexicalResult.matchedDomains)
+        const detailed = packBucketing.resolveAdmittedToolsDetailed(allTools, qualifyingToolNames, lexicalResult.matchedDomains)
+        activeTools = detailed.admittedTools
+
+        if (detailed.guidancePrompt.length > 0) {
+          assembly.sections.push({
+            name: 'tool-domain-packs-guidance',
+            text: detailed.guidancePrompt,
+            interpolate: false,
+          })
+        }
       } else {
         // Fallback: Individual tool selection
         scoredCandidates.sort((a, b) => b.score - a.score)
@@ -591,19 +698,21 @@ export function registerToolRouterHook(
       }
       state.currentTurnExecutedTools.clear()
     } else if (event.type === 'user/message') {
-      state.consecutiveErrors = 0
-      const text = event.data.content
-        .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
-        .map(c => c.text)
-        .join('\n')
       const sourceKind = (event.data.source as { kind?: string } | undefined)?.kind
-      state.latestUserMessage = {
-        text,
-        ...sourceKind !== undefined ? { sourceKind } : {},
-      }
-      if (config.autoCaptureDirectives && text.trim().length > 0) {
-        void autoSniffAndRevokeDirective(service, text, ctx.logger)
-        void autoSniffAndSaveDirective(service, text, ctx.logger)
+      if (sourceKind !== 'runtime-context' && sourceKind !== 'time-context') {
+        state.consecutiveErrors = 0
+        const text = event.data.content
+          .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+          .map(c => c.text)
+          .join('\n')
+        state.latestUserMessage = {
+          text,
+          ...sourceKind !== undefined ? { sourceKind } : {},
+        }
+        if (config.autoCaptureDirectives && text.trim().length > 0) {
+          void autoSniffAndRevokeDirective(service, text, ctx.logger)
+          void autoSniffAndSaveDirective(service, text, ctx.logger)
+        }
       }
     }
   })

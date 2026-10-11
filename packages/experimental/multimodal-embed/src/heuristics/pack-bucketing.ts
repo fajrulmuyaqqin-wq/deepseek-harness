@@ -14,6 +14,23 @@ export interface PackDefinition {
   readonly isAlwaysActive?: boolean
 }
 
+export const WELL_KNOWN_PACK_DESCRIPTIONS: Record<string, string> = {
+  core: 'Fundamental baseline operations (memory, user questions, tool activation)',
+  dev: 'Software development, filesystem operations (read/write/edit), terminal bash, and LSP diagnostics',
+  web: 'Internet research, web search, web page fetching, and online documentation',
+  team: 'Subagent orchestration, parallel agent delegation, and inter-agent communication',
+  goal: 'Long-running session goals, objectives, and progress tracking',
+  plan: 'Plan mode review and presentation tools',
+}
+
+export interface DetailedPackResolution<T> {
+  readonly admittedTools: T[]
+  readonly activePackIds: ReadonlySet<string>
+  readonly dormantPackIds: ReadonlySet<string>
+  readonly clusters: Map<string, T[]>
+  readonly guidancePrompt: string
+}
+
 // Default base domain packs for standard harness tools
 const BASE_CORE_TOOLS = [
   'manage_memory',
@@ -21,11 +38,6 @@ const BASE_CORE_TOOLS = [
   'save_rule',
   'save_lesson',
   'activate_tool',
-  'create_goal',
-  'update_goal',
-  'get_goal',
-  'job_list',
-  'job_output',
   'ask_user_question',
 ]
 
@@ -64,6 +76,16 @@ const BASE_TEAM_TOOLS = [
   'workflow',
 ]
 
+const BASE_GOAL_TOOLS = [
+  'create_goal',
+  'update_goal',
+  'get_goal',
+]
+
+const BASE_PLAN_TOOLS = [
+  'exit_plan_mode',
+]
+
 /**
  * Engine that dynamically discovers, groups, and resolves tool domain packs.
  */
@@ -80,6 +102,8 @@ export class DynamicPackBucketingEngine {
     this.registerPack('dev', BASE_DEV_TOOLS)
     this.registerPack('web', BASE_WEB_TOOLS)
     this.registerPack('team', BASE_TEAM_TOOLS)
+    this.registerPack('goal', BASE_GOAL_TOOLS)
+    this.registerPack('plan', BASE_PLAN_TOOLS)
 
     // 2. Overlay user-configured packs
     for (const [packId, toolList] of Object.entries(userCustomPacks)) {
@@ -165,19 +189,88 @@ export class DynamicPackBucketingEngine {
   }
 
   /**
-   * Resolves which tool packs should be activated given scored/candidate tools and active domains.
+   * Generates a concise, deterministic system prompt section guiding the LLM on tool packs,
+   * active vs dormant domains, and how to activate dormant tools via `activate_tool`.
+   *
+   * @param activePackIds The set of pack IDs currently active.
+   * @param clusters All clusters of tools across packs.
+   * @returns Formatted markdown prose guidance for the system prompt.
+   */
+  generatePackGuidance<T extends { name: string }>(
+    activePackIds: ReadonlySet<string>,
+    clusters: Map<string, T[]>,
+  ): string {
+    const activeList: string[] = []
+    const dormantList: string[] = []
+
+    // Sorted list of all known pack IDs
+    const allPackIds = Array.from(clusters.keys()).sort((a, b) => {
+      const priority: Record<string, number> = { core: 0, dev: 1, web: 2, team: 3, goal: 4 }
+      const pa = priority[a] ?? 10
+      const pb = priority[b] ?? 10
+      if (pa !== pb) return pa - pb
+      return a.localeCompare(b)
+    })
+
+    for (const packId of allPackIds) {
+      const tools = clusters.get(packId) ?? []
+      const toolNames = tools.map(t => t.name)
+      const sampleToolsStr = toolNames.length <= 4
+        ? toolNames.map(n => `\`${n}\``).join(', ')
+        : `${toolNames.slice(0, 3).map(n => `\`${n}\``).join(', ')}, +${toolNames.length - 3} more`
+
+      let desc = WELL_KNOWN_PACK_DESCRIPTIONS[packId]
+      if (!desc) {
+        if (packId.startsWith('mcp:')) {
+          desc = `Specialized external tools from MCP server '${packId.slice(4)}'`
+        } else if (packId.startsWith('plugin:')) {
+          desc = `Plugin tools for namespace '${packId.slice(7)}'`
+        } else {
+          desc = `Domain capability pack '${packId}'`
+        }
+      }
+
+      if (activePackIds.has(packId)) {
+        activeList.push(`- **\`${packId}\`** (Active - ${sampleToolsStr}): ${desc}`)
+      } else {
+        dormantList.push(`- **\`${packId}\`** (${sampleToolsStr}): ${desc}`)
+      }
+    }
+
+    const lines: string[] = [
+      '## Tool Domain Packs & Capability Guidance',
+      'Available tools are organized into domain packs to maintain focus and stability:',
+      '### Active Packs (Ready to use in this turn):',
+      ...(activeList.length > 0 ? activeList : ['- *(None)*']),
+    ]
+
+    if (dormantList.length > 0) {
+      lines.push(
+        '',
+        '### Dormant Packs (Available on-demand):',
+        ...dormantList,
+        '',
+        '> **Decision Guidance:** If your task requires tools from a dormant pack (e.g. web search or subagents), call `activate_tool({ tools: ["<tool_name>"] })` or clearly express your intent. The capability router will automatically activate the relevant pack for subsequent turns.',
+      )
+    }
+
+    return lines.join('\n')
+  }
+
+  /**
+   * Detailed resolution returning both admitted tools and LLM guidance text.
    * Admitting any tool within a pack admits the ENTIRE pack in deterministic order, preserving prefix cache.
    *
    * @param allTools All registered tools in assembly.
    * @param qualifyingToolNames Tool names that crossed admission threshold or were explicitly activated.
    * @param matchedDomains Domains flagged by high-precision heuristics (e.g., 'dev', 'web').
-   * @returns Array of tool schemas from all admitted packs, deterministically sorted.
+   * @returns Detailed resolution including admitted tools, active and dormant pack IDs, and guidance prompt.
    */
-  resolveAdmittedTools<T extends { name: string }>(
+  resolveAdmittedToolsDetailed<T extends { name: string }>(
     allTools: readonly T[],
     qualifyingToolNames: ReadonlySet<string>,
     matchedDomains: ReadonlySet<string>,
-  ): T[] {
+  ): DetailedPackResolution<T> {
     const clusters = this.clusterTools(allTools)
     const activePackIds = new Set<string>()
 
@@ -197,13 +290,21 @@ export class DynamicPackBucketingEngine {
       activePackIds.add(packId)
     }
 
+    // Determine dormant pack IDs
+    const dormantPackIds = new Set<string>()
+    for (const packId of clusters.keys()) {
+      if (!activePackIds.has(packId)) {
+        dormantPackIds.add(packId)
+      }
+    }
+
     // Collect tools from all active packs
     const admitted: T[] = []
     const seen = new Set<string>()
 
     // Maintain deterministic pack order: core -> dev -> web -> team -> dynamic MCP/plugins -> misc
     const sortedPackIds = Array.from(activePackIds).sort((a, b) => {
-      const priority: Record<string, number> = { core: 0, dev: 1, web: 2, team: 3 }
+      const priority: Record<string, number> = { core: 0, dev: 1, web: 2, team: 3, goal: 4, plan: 5 }
       const pa = priority[a] ?? 10
       const pb = priority[b] ?? 10
       if (pa !== pb) return pa - pb
@@ -222,6 +323,31 @@ export class DynamicPackBucketingEngine {
       }
     }
 
-    return admitted
+    const guidancePrompt = this.generatePackGuidance(activePackIds, clusters)
+
+    return {
+      admittedTools: admitted,
+      activePackIds,
+      dormantPackIds,
+      clusters,
+      guidancePrompt,
+    }
+  }
+
+  /**
+   * Resolves which tool packs should be activated given scored/candidate tools and active domains.
+   * Admitting any tool within a pack admits the ENTIRE pack in deterministic order, preserving prefix cache.
+   *
+   * @param allTools All registered tools in assembly.
+   * @param qualifyingToolNames Tool names that crossed admission threshold or were explicitly activated.
+   * @param matchedDomains Domains flagged by high-precision heuristics (e.g., 'dev', 'web').
+   * @returns Array of tool schemas from all admitted packs, deterministically sorted.
+   */
+  resolveAdmittedTools<T extends { name: string }>(
+    allTools: readonly T[],
+    qualifyingToolNames: ReadonlySet<string>,
+    matchedDomains: ReadonlySet<string>,
+  ): T[] {
+    return this.resolveAdmittedToolsDetailed(allTools, qualifyingToolNames, matchedDomains).admittedTools
   }
 }
