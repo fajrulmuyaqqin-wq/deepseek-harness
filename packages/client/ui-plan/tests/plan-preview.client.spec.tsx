@@ -291,6 +291,7 @@ describe('plan entry points and document', () => {
     const view = render(<PlanPreview {...props as unknown as Parameters<typeof PlanPreview>[0]} />)
     expect(screen.getByRole('heading', { name: plan.title })).toBeTruthy()
     expect(screen.getByText('Implement')).toBeTruthy()
+    expect(view.container.querySelector('[data-markdown-annotations]')).toBeTruthy()
     view.rerender(<PlanTitle {...props as unknown as Parameters<typeof PlanTitle>[0]} />)
     expect(screen.getByText(plan.title)).toBeTruthy()
     view.rerender(<PlanPreview {...{ ...props,

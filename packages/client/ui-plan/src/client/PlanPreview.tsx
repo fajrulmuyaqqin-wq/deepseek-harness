@@ -1,6 +1,6 @@
 /** Read-only Markdown viewer for logged plans and temporary review documents. */
 import { useMemo } from 'react'
-import { FileTypeIcon, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { FileTypeIcon, MarkdownAnnotations, MarkdownText, type MarkdownAnnotationsLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from './plan-resource.ts'
@@ -25,6 +25,24 @@ export function PlanPreview({ useTabInfo, useResource, t }: PlanPreviewProps) {
     code: { copyLabel: t('copy'), copiedLabel: t('copied'), toolbarLabels: { codeLabel: t('codeBlock.title'), wrapLabel: t('codeBlock.wrap'), unwrapLabel: t('codeBlock.unwrap') } },
     footnotes: t('markdown.footnotes'),
   }), [t])
+  const annotationLabels = useMemo<MarkdownAnnotationsLabels>(() => ({
+    commentAdd: t('comment.add'),
+    commentSave: t('comment.save'),
+    commentCancel: t('comment.cancel'),
+    commentPlaceholder: t('comment.placeholder'),
+    commentDelete: t('comment.delete'),
+    commentEdit: t('comment.edit'),
+    commentBadge: t('comment.badge'),
+    commentBadgeCount: count => t('comment.badgeCount', { n: count }),
+    commentQuoted: t('comment.quoted'),
+    commentInserted: t('comment.inserted'),
+    commentInsertAll: t('comment.insertAll'),
+    commentInsertAllTitle: t('comment.insertAllTitle'),
+    selectionComment: t('selection.comment'),
+    selectionQuote: t('selection.quote'),
+    shortcutComment: t('comment.shortcutComment'),
+    shortcutQuote: t('comment.shortcutQuote'),
+  }), [t])
   if (plan === undefined) return (
     <div className={css.message} role="status">
       {temporary ? t('preview.expired') : resource.status === 'none' ? t('preview.unavailable')
@@ -34,7 +52,14 @@ export function PlanPreview({ useTabInfo, useResource, t }: PlanPreviewProps) {
   )
   return (
     <section className={css.preview} data-plan-preview={'callId' in plan ? plan.callId : tab.tab.navigation.address} aria-label={plan.title}>
-      <div className={css.document}><MarkdownText text={plan.markdown} labels={labels} /></div>
+      <MarkdownAnnotations
+        resourceAddress={tab.tab.navigation.address}
+        absolutePath={plan.title}
+        sourceText={plan.markdown}
+        labels={annotationLabels}
+      >
+        <div className={css.document}><MarkdownText text={plan.markdown} labels={labels} /></div>
+      </MarkdownAnnotations>
     </section>
   )
 }

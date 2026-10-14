@@ -1,9 +1,12 @@
+import { promises as fs } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { RUN_CODE_NAME, defineContentToolFixture } from '@deepseek-ai/dsh-tools'
-import { Session, SessionId, type SessionEvent, type UserMessage } from '@deepseek-ai/dsh-session'
+import { Session, SessionId, SESSION_FORMAT_VERSION, type SessionEvent, type UserMessage } from '@deepseek-ai/dsh-session'
 import AgentRegistry, { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import UserQuestionService, {
@@ -13,7 +16,7 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { PtcRuntime, type PtcRunRequest, type PtcRunResult } from '@deepseek-ai/dsh-ptc-runtime'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { turnBoundaryProjectionDefinition } from '@deepseek-ai/dsh-agent-loop'
-import PlanModeController, { EXIT_PLAN_MODE, planProjectionDefinition, resolveConfig } from '../src/index.ts'
+import PlanModeController, { EXIT_PLAN_MODE, hasPlanIntent, hasProceedIntent, planProjectionDefinition, resolveConfig } from '../src/index.ts'
 import type { PlanModeConfig } from '../src/index.ts'
 import type { PlanUnitState } from '../src/types.ts'
 
@@ -39,11 +42,23 @@ function registerQuestionAnswerer(ctx: Context, answerer: QuestionAnswerer): () 
 async function agentWithSession(
   ctx: Context,
   id = 'agent-1',
-  { active, owner }: { active?: boolean; owner?: Agent } = {},
+  { active, owner, cwd }: { active?: boolean; owner?: Agent; cwd?: string } = {},
 ): Promise<Agent & { session: Session }> {
   // A live store session when a store is mounted (the command executor logs
   // lifecycle events through it); bare otherwise (fold/tool-only benches).
-  const session = Session.create(SessionId(id))
+  const session = Session.create(
+    SessionId(id),
+    [],
+    cwd === undefined
+      ? undefined
+      : {
+        version: SESSION_FORMAT_VERSION,
+        id: SessionId(id),
+        createdAt: 0,
+        cwd,
+        isSeeded: false,
+      },
+  )
   const agent = {
     id: SessionId(id),
     session,
@@ -810,7 +825,10 @@ describe('/plan', () => {
 })
 
 describe('exit_plan_mode', () => {
-  async function setupWithReview(answer?: { selected: string[]; custom?: string }) {
+  async function setupWithReview(
+    answer?: { selected: string[]; custom?: string },
+    agentOptions?: { cwd?: string },
+  ) {
     const ctx = await setup()
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(UserQuestionService)
@@ -823,7 +841,7 @@ describe('exit_plan_mode', () => {
         },
       })
     }
-    const agent = await agentWithSession(ctx, 'agent-1', { active: true })
+    const agent = await agentWithSession(ctx, 'agent-1', { active: true, ...agentOptions })
     return { ctx, agent, asked }
   }
 
@@ -927,6 +945,20 @@ describe('exit_plan_mode', () => {
     expect(asked[0]?.agent).toBe(agent)
     expect(asked[0]?.questions[0]?.detail).toBe('# The plan\n\ndo things')
     expect(asked[0]?.questions[0]?.options?.map(option => option.label)).toEqual(['Approve', 'Keep planning'])
+  })
+
+  it('automatically writes plan.md to the workspace directory on presentation and approval', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-plan-test-'))
+    try {
+      const { ctx, agent } = await setupWithReview({ selected: ['Approve'] }, { cwd: tmpDir })
+      const planContent = '# My Awesome Plan\n\n- [ ] Step 1\n- [ ] Step 2'
+      const result = await callExit(ctx, agent, planContent)
+      expect(result.isError).toBe(false)
+      const written = await fs.readFile(path.join(tmpDir, 'plan.md'), 'utf-8')
+      expect(written).toBe(planContent)
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true })
+    }
   })
 
   it('carries the exact plan through a PTC mode review and logs the nested dispatch', async () => {
@@ -1204,5 +1236,154 @@ describe('HMR disposal', () => {
     expect((await ctx.systemPrompt.assemble()).sections.map(section => section.name)).not.toContain('plan:policy')
     await boundary(ctx, agent, 'step-start')
     expect(agent.session.snapshotEvents().some(event => event.type === 'plan/mode')).toBe(false)
+  })
+})
+
+describe('hasPlanIntent', () => {
+  it('detects planning intent across Indonesian, English, and inline slash tokens', () => {
+    expect(hasPlanIntent('buatkan rencana scraper tokopedia')).toBe(true)
+    expect(hasPlanIntent('rancang arsitektur backend')).toBe(true)
+    expect(hasPlanIntent('rancangan sistem pembayaran')).toBe(true)
+    expect(hasPlanIntent('tolong buatkan plan untuk scraper')).toBe(true)
+    expect(hasPlanIntent('plan')).toBe(true)
+    expect(hasPlanIntent('planning the sprint')).toBe(true)
+    expect(hasPlanIntent('tolong /plan ini')).toBe(true)
+    expect(hasPlanIntent('/plan: buat scraper')).toBe(true)
+  })
+
+  it('rejects cancellation or unrelated prompts', () => {
+    expect(hasPlanIntent('/plan off')).toBe(false)
+    expect(hasPlanIntent('cancel plan')).toBe(false)
+    expect(hasPlanIntent('batalkan plan')).toBe(false)
+    expect(hasPlanIntent('keluar dari plan')).toBe(false)
+    expect(hasPlanIntent('halo apa kabar')).toBe(false)
+    expect(hasPlanIntent('fix the bug in index.ts')).toBe(false)
+  })
+})
+
+describe('hasProceedIntent', () => {
+  it('detects proceed/approval intent across Indonesian and English keywords', () => {
+    expect(hasProceedIntent('proceed')).toBe(true)
+    expect(hasProceedIntent('lanjut')).toBe(true)
+    expect(hasProceedIntent('lanjutkan')).toBe(true)
+    expect(hasProceedIntent('jalankan rencana')).toBe(true)
+    expect(hasProceedIntent('eksekusi')).toBe(true)
+    expect(hasProceedIntent('gaskan')).toBe(true)
+    expect(hasProceedIntent('ok proceed')).toBe(true)
+    expect(hasProceedIntent('oke lanjut')).toBe(true)
+    expect(hasProceedIntent('setuju')).toBe(true)
+    expect(hasProceedIntent('approve')).toBe(true)
+  })
+
+  it('rejects negative or unrelated phrases', () => {
+    expect(hasProceedIntent('jangan lanjut')).toBe(false)
+    expect(hasProceedIntent('batal')).toBe(false)
+    expect(hasProceedIntent("don't proceed")).toBe(false)
+    expect(hasProceedIntent('tambah fitur login')).toBe(false)
+  })
+})
+
+describe('flexible plan mode & task guard', () => {
+  it('automatically enters plan mode when user message expresses plan intent', async () => {
+    const ctx = await setup()
+    const agent = await agentWithSession(ctx, 'auto-intent-agent')
+    openTurn(agent.session)
+
+    const events = agentEvents(ctx, agent)
+    const userMsg = createUserMessage({
+      content: [{ type: 'text', text: 'buatkan rencana scraper tokopedia' }],
+      source: { kind: 'user' },
+    })
+    const signal = new AbortController().signal
+
+    await events.waterfall(
+      'agent/pre-step',
+      { messages: [userMsg], turn: 1, step: 1, signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages: [userMsg] }),
+    )
+
+    expect(ctx.planMode.get(agent).active).toBe(true)
+  })
+
+  it('automatically exits plan mode when user message expresses proceed intent while in plan mode', async () => {
+    const ctx = await setup()
+    const agent = await agentWithSession(ctx, 'auto-proceed-agent', { active: true })
+    openTurn(agent.session)
+
+    const events = agentEvents(ctx, agent)
+    const userMsg = createUserMessage({
+      content: [{ type: 'text', text: 'lanjutkan implementasi' }],
+      source: { kind: 'user' },
+    })
+    const signal = new AbortController().signal
+
+    const decision = await events.waterfall(
+      'agent/pre-step',
+      { messages: [userMsg], turn: 1, step: 2, signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages: [userMsg] }),
+    )
+
+    expect(ctx.planMode.get(agent).active).toBe(false)
+    expect(decision.kind).toBe('enter')
+    if (decision.kind === 'enter') {
+      const injected = decision.messages.some(m =>
+        m.content.some(c => c.type === 'text' && c.text.includes('initialize your task list from plan.md using todo_write')))
+      expect(injected).toBe(true)
+    }
+  })
+
+  it('guards against premature todo_write calls during plan mode', async () => {
+    const ctx = await setup()
+    const agent = await agentWithSession(ctx, 'todo-guard-agent', { active: true })
+
+    // Register dummy todo_write fixture
+    ctx.tools.register(defineContentToolFixture({
+      name: 'todo_write',
+      description: 'Record tasks',
+      parameters: {},
+      execute: () => Promise.resolve([{ type: 'text', text: 'wrote todos' }]),
+    }))
+
+    const result = await ctx.tools.execute({
+      callId: ToolCallId('test-todo-1'),
+      name: 'todo_write',
+      arguments: {},
+      signal: new AbortController().signal,
+      agent,
+    })
+
+    expect(result.isError).toBe(true)
+    const first = result.content[0]
+    expect(first?.type).toBe('text')
+    if (first?.type === 'text') {
+      expect(first.text).toContain('todo_write is not allowed during plan mode')
+    }
+  })
+
+  it('allows todo_write once plan mode is inactive', async () => {
+    const ctx = await setup()
+    const agent = await agentWithSession(ctx, 'todo-allowed-agent', { active: false })
+
+    ctx.tools.register(defineContentToolFixture({
+      name: 'todo_write',
+      description: 'Record tasks',
+      parameters: {},
+      execute: () => Promise.resolve([{ type: 'text', text: 'wrote todos' }]),
+    }))
+
+    const result = await ctx.tools.execute({
+      callId: ToolCallId('test-todo-2'),
+      name: 'todo_write',
+      arguments: {},
+      signal: new AbortController().signal,
+      agent,
+    })
+
+    expect(result.isError).toBe(false)
+    const first = result.content[0]
+    expect(first?.type).toBe('text')
+    if (first?.type === 'text') {
+      expect(first.text).toBe('wrote todos')
+    }
   })
 })

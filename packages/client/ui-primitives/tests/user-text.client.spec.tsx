@@ -140,6 +140,86 @@ describe('projectUserText', () => {
     expect(openFile).not.toHaveBeenCalled()
   })
 
+  it('projects artifact quote citations into interactive quote chips with location navigation', () => {
+    const openFile = vi.fn()
+    const text = '> [plan.md:L7](file:///workspace/plan.md#L7)\n> Fase 1: Perencanaan & Analisis Kebutuhan\n\nini apa maksudnya'
+    const view = render(<div>{projectUserText(text, [], [], 'skill', { openFile, openSkill: vi.fn() })}</div>)
+    const quoteButton = view.container.querySelector<HTMLButtonElement>('button')!
+    expect(quoteButton.getAttribute('data-ref-chip')).toBe('quote')
+    expect(quoteButton.textContent).toContain('Fase 1: Perencanaan & Analisis Kebutuhan')
+    expect(quoteButton.querySelector('svg')).not.toBeNull()
+    expect(view.container.textContent).toContain('ini apa maksudnya')
+
+    fireEvent.click(quoteButton)
+    expect(openFile).toHaveBeenCalledWith('/workspace/plan.md', { line: 7 })
+  })
+
+  it('projects artifact quote with URL on a separate line (new wire format)', () => {
+    const openFile = vi.fn()
+    const text = '> [plan.md:L7]\n(file:///workspace/plan.md#L7)\n> Fase 1: Perencanaan & Analisis\n\nini apa maksudnya'
+    const view = render(<div>{projectUserText(text, [], [], 'skill', { openFile, openSkill: vi.fn() })}</div>)
+    const quoteButton = view.container.querySelector<HTMLButtonElement>('button')!
+    expect(quoteButton.getAttribute('data-ref-chip')).toBe('quote')
+    expect(quoteButton.textContent).toContain('Fase 1: Perencanaan & Analisis')
+    expect(quoteButton.querySelector('svg')).not.toBeNull()
+    expect(view.container.textContent).toContain('ini apa maksudnya')
+
+    fireEvent.click(quoteButton)
+    expect(openFile).toHaveBeenCalledWith('/workspace/plan.md', { line: 7 })
+  })
+
+  it('projects conversation-turn quote (no URL) as a non-navigable quote chip', () => {
+    const text = '> [Quote · conversation · turn 8]\n> gisi Fase 1 tersebut agar kita bisa\n\nasdasd'
+    const host = project(text)
+    const chip = host.querySelector('[data-ref-chip="quote"]')!
+    expect(chip).not.toBeNull()
+    expect(chip.tagName.toLowerCase()).toBe('span')
+    expect(chip.textContent).toContain('gisi Fase 1 tersebut')
+    expect(chip.querySelector('svg')).not.toBeNull()
+    expect(host.textContent).toContain('asdasd')
+  })
+
+  it('projects artifact comment citations with comment glyph and anchor quote chip', () => {
+    const openFile = vi.fn()
+    const text = '[Artifact comment on [plan.md:L3](file:///workspace/plan.md#L3)]:\n> Rencana terstruktur dan komprehensif\nads\n\nasda'
+    const view = render(<div>{projectUserText(text, [], [], 'skill', { openFile, openSkill: vi.fn() })}</div>)
+    const buttons = view.container.querySelectorAll<HTMLButtonElement>('button')
+    expect(buttons).toHaveLength(2)
+    expect(buttons[0]?.getAttribute('data-ref-chip')).toBe('comment')
+    expect(buttons[0]?.textContent).toContain('plan.md:L3')
+    expect(buttons[0]?.querySelector('svg')).not.toBeNull()
+
+    expect(buttons[1]?.getAttribute('data-ref-chip')).toBe('quote')
+    expect(buttons[1]?.textContent).toContain('Rencana terstruktur dan komprehensif')
+
+    expect(view.container.textContent).toContain('ads')
+    expect(view.container.textContent).toContain('asda')
+
+    fireEvent.click(buttons[0]!)
+    expect(openFile).toHaveBeenCalledWith('/workspace/plan.md', { line: 3 })
+  })
+
+  it('projects artifact comment with URL on a separate line (new wire format)', () => {
+    const openFile = vi.fn()
+    const text = '[Artifact comment on [plan.md:L3]\n(file:///workspace/plan.md#L3)]:\n> Rencana terstruktur\nads\n\nasda'
+    const view = render(<div>{projectUserText(text, [], [], 'skill', { openFile, openSkill: vi.fn() })}</div>)
+    const commentBtn = view.container.querySelector<HTMLButtonElement>('[data-ref-chip="comment"]')!
+    expect(commentBtn).not.toBeNull()
+    expect(commentBtn.textContent).toContain('plan.md:L3')
+    expect(view.container.textContent).toContain('ads')
+
+    fireEvent.click(commentBtn)
+    expect(openFile).toHaveBeenCalledWith('/workspace/plan.md', { line: 3 })
+  })
+
+  it('projects bare artifact comment without anchor snippet', () => {
+    const host = project('[Artifact comment on [plan.md:L3](file:///workspace/plan.md#L3)]: ads')
+    const chip = host.querySelector('[data-ref-chip="comment"]')!
+    expect(chip).not.toBeNull()
+    expect(chip.textContent).toContain('plan.md:L3')
+    expect(host.textContent).toContain('ads')
+  })
+
   it('renders undecorated text as one inline run', () => {
     const host = project('纯文本，无引用')
     expect(host.querySelectorAll('div').length).toBe(0)

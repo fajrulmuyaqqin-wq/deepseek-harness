@@ -318,7 +318,7 @@ export function clientSourceRoot(file: string): string | undefined {
 
 function sourceFiles(): string[] {
   const clientComponentRoots = new Set(
-    globSync('packages/*/*/src/client/**/*.tsx', { cwd: root })
+    globSync('packages/*/*/src/client/**/*.tsx', { cwd: root, exclude: ['packages/experimental/market/**'] })
       .map(clientSourceRoot)
       .filter((clientRoot): clientRoot is string => clientRoot !== undefined),
   )

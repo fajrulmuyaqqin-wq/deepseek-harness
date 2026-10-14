@@ -1,0 +1,21 @@
+/** Re-export composer bridge from primitives for document preview. */
+export {
+  findComposerElement,
+  appendTextToComposer,
+  quoteSelectionToComposer,
+  commentToComposer,
+  dismissCitationElement,
+  renderCitationElement,
+  renderQuotesView,
+  renderCommentsView,
+  getActiveQuotes,
+  getActiveComments,
+  removeQuote,
+  clearComments,
+  clearAllCitations,
+  resolveSourceLocation,
+  type ResolvedSourceLocation,
+  type ActiveQuoteCitation,
+  type ActiveCommentCitation,
+  type ActiveCitation,
+} from '@deepseek-ai/dsh-client-ui-primitives'

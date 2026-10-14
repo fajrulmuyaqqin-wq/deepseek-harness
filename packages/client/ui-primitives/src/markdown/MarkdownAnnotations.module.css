@@ -1,0 +1,356 @@
+.annotationsContainer {
+  position: relative;
+  min-width: 0;
+  padding-right: 36px;
+}
+
+.markdownInner {
+  min-width: 0;
+}
+
+/* Persistent highlight for commented text/blocks */
+.annotatedBlock {
+  background: rgba(37, 99, 235, 0.2) !important;
+  border-radius: 4px;
+  outline: 1px solid rgba(59, 130, 246, 0.4);
+  transition: background 0.2s ease, outline 0.2s ease;
+}
+
+/* Active block being commented on */
+.activeTargetBlock {
+  background: rgba(37, 99, 235, 0.32) !important;
+  border-radius: 4px;
+  outline: 1px solid #2563eb !important;
+}
+
+/* Gutter Hover '+' button (Image 1) */
+.gutterAddButton {
+  position: absolute;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  z-index: 10;
+  transition: transform 0.12s ease, filter 0.12s ease;
+  animation: popIn 0.15s ease-out;
+}
+
+.gutterAddButton:hover {
+  transform: scale(1.12);
+  filter: brightness(1.18);
+}
+
+/* Gutter Comment Badge (Image 3) */
+.commentBadge {
+  position: absolute;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  transition: all 0.15s ease;
+}
+
+.commentBadge:hover {
+  color: #38bdf8;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Active solid blue comment badge (Image 4) */
+.commentBadgeActive {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.4);
+}
+
+/* Inline Comment Editor (Image 2) */
+.inlineCommentBox {
+  position: absolute;
+  left: 12px;
+  right: 36px;
+  z-index: 30;
+  background: #1e1e24;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  animation: slideDown 0.15s ease-out;
+}
+
+.commentTextarea {
+  width: 100%;
+  min-height: 58px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #f3f4f6;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.commentTextarea:focus {
+  border-color: #2563eb;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.commentEditorActionsRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.editorCancelBtn {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.editorCancelBtn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.editorSaveBtn {
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.editorSaveBtn:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.editorSaveBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Comment Popover (Image 4) */
+.commentPopover {
+  position: absolute;
+  right: 34px;
+  min-width: 200px;
+  max-width: 320px;
+  z-index: 40;
+  background: #1c1c22;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  animation: fadeIn 0.15s ease-out;
+}
+
+.popoverCommentText {
+  color: #f3f4f6;
+  font-size: 13px;
+  line-height: 1.45;
+  margin-bottom: 12px;
+  word-break: break-word;
+}
+
+.popoverActionsRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.popoverDeleteBtn {
+  color: #ef4444;
+  background: none;
+  border: none;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.popoverDeleteBtn:hover {
+  color: #dc2626;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.popoverEditBtn {
+  background: #3f3f46;
+  color: #f4f4f5;
+  border: none;
+  border-radius: 14px;
+  padding: 3px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.popoverEditBtn:hover {
+  background: #52525b;
+}
+
+/* Selection Toolbar (Image 5) */
+.selectionToolbar {
+  z-index: 9999;
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  border-radius: 18px;
+  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  animation: popIn 0.12s ease-out;
+}
+
+.toolbarBtn {
+  background: none;
+  border: none;
+  color: #f4f4f5;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.12s ease;
+}
+
+.toolbarBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.shortcutKbd {
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #a1a1aa;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: inherit;
+  font-weight: 400;
+}
+
+.toolbarDivider {
+  width: 1px;
+  height: 14px;
+  background: #3f3f46;
+}
+
+/* Overview Bar above document */
+.commentsOverviewBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 6px 12px;
+  background: rgba(37, 99, 235, 0.1);
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  border-radius: 6px;
+}
+
+.overviewLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.overviewBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #60a5fa;
+}
+
+.overviewActionBtn {
+  background: rgba(37, 99, 235, 0.2);
+  color: #93c5fd;
+  border: 1px solid rgba(37, 99, 235, 0.4);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.overviewActionBtn:hover {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+/* Status toast */
+.statusToast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  background: #27272a;
+  color: #f4f4f5;
+  border: 1px solid #3f3f46;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  animation: popIn 0.2s ease-out;
+}
+
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

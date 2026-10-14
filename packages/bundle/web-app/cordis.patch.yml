@@ -420,6 +420,9 @@
     - id: ui-settings-plugins
       name: '@deepseek-ai/dsh-client-ui-settings-plugins'
 
+    - id: dsh-market
+      name: '@deepseek-ai/dsh-experimental-market'
+
     # The official settings pages: one companion package per host-plane
     # namespace, each registering its page into the Plugins page while the
     # Host serves the namespace.

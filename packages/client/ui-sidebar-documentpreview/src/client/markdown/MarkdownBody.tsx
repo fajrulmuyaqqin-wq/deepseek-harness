@@ -7,6 +7,7 @@ import type { DocumentPreviewProps } from '../document/contract.ts'
 import { splitFrontmatter } from './frontmatter.ts'
 import type { FrontmatterFieldsProps } from './frontmatter-fields.tsx'
 import { markdownImageUrl } from './path-images.ts'
+import { MarkdownAnnotations } from './MarkdownAnnotations.tsx'
 import type {} from './locales.ts'
 import css from './MarkdownBody.module.css'
 
@@ -51,7 +52,14 @@ export function MarkdownBody({ content, resourceAddress, useResource, t }: Markd
   return (
     <div className={css.document} data-document-markdown>
       {split === undefined ? null : <FrontmatterBox source={split.source} />}
-      <MarkdownText text={split?.body ?? text} streaming={!content.eof} labels={labels} pathImages={pathImages} />
+      <MarkdownAnnotations
+        resourceAddress={resourceAddress}
+        absolutePath={absolutePath}
+        sourceText={split?.body ?? text}
+        t={t}
+      >
+        <MarkdownText text={split?.body ?? text} streaming={!content.eof} labels={labels} pathImages={pathImages} />
+      </MarkdownAnnotations>
     </div>
   )
 }

@@ -113,3 +113,29 @@ export {
 export { GuideArtworkBrowser, GuideArtworkFiles } from './guide-artwork.tsx'
 export { ImageLightbox } from './ImageLightbox.tsx'
 export type { ImageLightboxLabels } from './ImageLightbox.tsx'
+export { MarkdownAnnotations } from './markdown/MarkdownAnnotations.tsx'
+export type {
+  MarkdownAnnotationsLabels,
+  MarkdownAnnotationsProps,
+  MarkdownComment,
+} from './markdown/MarkdownAnnotations.tsx'
+export {
+  findComposerElement,
+  appendTextToComposer,
+  commentToComposer,
+  quoteSelectionToComposer,
+  dismissCitationElement,
+  renderCitationElement,
+  renderQuotesView,
+  renderCommentsView,
+  getActiveQuotes,
+  getActiveComments,
+  removeQuote,
+  clearComments,
+  clearAllCitations,
+  type ActiveQuoteCitation,
+  type ActiveCommentCitation,
+  type ActiveCitation,
+} from './markdown/composer-bridge.ts'
+export { resolveSourceLocation } from './markdown/source-location.ts'
+export type { ResolvedSourceLocation } from './markdown/source-location.ts'

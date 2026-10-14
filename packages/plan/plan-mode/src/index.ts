@@ -21,6 +21,8 @@
  * @module @deepseek-ai/dsh-plan-mode
  */
 
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { z as zod } from 'zod'
@@ -84,6 +86,48 @@ const EXIT_DESCRIPTION
   = 'Use only in plan mode. Present your plan for the user\'s review and, on approval, leave plan mode. '
   + 'The user may approve (carry out the plan from your next step) or keep '
   + 'planning — their feedback comes back in the tool result; revise and present again.'
+
+/**
+ * Detect planning intent from user text across languages (Indonesian & English)
+ * and inline /plan tokens, excluding explicit deactivation or cancellation.
+ */
+export function hasPlanIntent(text: string): boolean {
+  const trimmed = text.trim()
+  if (/^\/plan\s+off\b/i.test(trimmed)) return false
+  if (/\b(?:cancel|batalkan|keluar dari|leave)\s+plan\b/i.test(trimmed)) return false
+  if (/^plan\s+after\b/i.test(trimmed)) return false
+  return (
+    /(?:^|\s)\/plan(?:\s|$|:)/i.test(trimmed) ||
+    /^(?:tolong\s+)?(?:plan|planning)(?:\s*[:\-]|(?:\s+|$))/i.test(trimmed) ||
+    /\b(?:buatkan|bikin|susun|rancang)\s+(?:aku\s+)?(?:plan|rencana)\b/i.test(trimmed) ||
+    /\b(?:create|draft|make|write|prepare)\s+(?:a\s+)?plan\b/i.test(trimmed) ||
+    /\b(?:rencana|rancang|rancangan)\b/i.test(trimmed)
+  )
+}
+
+/**
+ * Detect user approval or intent to proceed with plan execution.
+ * Handles Indonesian and English affirmative proceed keywords while
+ * safely ignoring negative phrases.
+ */
+export function hasProceedIntent(text: string): boolean {
+  const trimmed = text.trim()
+  if (trimmed === '') return false
+  const lower = trimmed.toLowerCase()
+  if (/\b(?:jangan\s+(?:lanjut|jalan|eksekusi)|batal|cancel|stop|tunda|don't\s+proceed)\b/i.test(lower)) {
+    return false
+  }
+  if (/\b(?:proceed|go\s+ahead|start\s+implementation|execute\s+plan|apply\s+plan|run\s+the\s+plan|let's\s+do\s+it)\b/i.test(lower)) {
+    return true
+  }
+  if (/\b(?:lanjut|lanjutkan|jalankan|laksanakan|kerjakan|eksekusi|gaskan|mulai\s+kerjakan|gas)\b/i.test(lower)) {
+    return true
+  }
+  if (/^(?:ok|oke|siap|setuju|approve|sip)\b/i.test(lower)) {
+    return true
+  }
+  return false
+}
 
 /** The plan's first markdown heading (any level), or `undefined` when it has none. */
 function firstHeading(plan: string): string | undefined {
@@ -194,9 +238,30 @@ export class PlanModeController extends Service {
     // A failed append remains pending for a later accepted in-turn pre-step,
     // and policy cannot block the step.
     ctx.on('agent/pre-step', async (
-      { agent, signal },
+      { agent, messages, signal },
       next,
     ): Promise<PreStepDecision> => {
+      let proceedNotice: UserMessage | undefined
+      if (this.pendingIntents.get(agent.session) === undefined && messages !== undefined) {
+        const text = messages
+          .filter(m => m.source.kind === 'user')
+          .flatMap(m => m.content.filter(c => c.type === 'text').map(c => (c as { text: string }).text))
+          .join(' ')
+        if (text !== '') {
+          if (!this.loggedActive(agent.session) && hasPlanIntent(text)) {
+            this.set(agent, true)
+          } else if (this.loggedActive(agent.session) && !hasPlanIntent(text) && hasProceedIntent(text)) {
+            this.set(agent, false)
+            proceedNotice = createUserMessage({
+              content: [{
+                type: 'text',
+                text: 'Plan mode is exited. You are now in execution mode. Read plan.md in the workspace, immediately initialize your task list from plan.md using todo_write, work through the implementation steps sequentially, and mark them completed until 0 pending tasks remain.',
+              }],
+              source: { kind: 'plan-mode', form: 'notice', summary: 'Plan approved; begin task execution' },
+            })
+          }
+        }
+      }
       const decision = await next()
       const pending = this.pendingIntents.get(agent.session)
       if (decision.kind === 'reject' || signal.aborted || pending === undefined) return decision
@@ -207,9 +272,22 @@ export class PlanModeController extends Service {
         ctx.logger.warn('dsh-plan-mode: failed to append selected plan mode at step start: %o', error)
         return decision
       }
-      return !pending.narrate || narration === undefined
+      const notices = [
+        ...pending.narrate && narration !== undefined ? [narration] : [],
+        ...proceedNotice !== undefined ? [proceedNotice] : [],
+      ]
+      return notices.length === 0
         ? decision
-        : { ...decision, messages: [...decision.messages, narration] }
+        : { ...decision, messages: [...decision.messages, ...notices] }
+    })
+    ctx.on('tools/execute', async (exec, next) => {
+      if (exec.name === 'todo_write' && exec.agent !== undefined) {
+        const inPlan = this.pendingIntents.get(exec.agent.session)?.active ?? this.loggedActive(exec.agent.session)
+        if (inPlan) {
+          throw new Error('todo_write is not allowed during plan mode. You must formulate and present your complete plan using exit_plan_mode first. After the user approves the plan, you can then use todo_write to track implementation steps.')
+        }
+      }
+      return next()
     })
     ctx.effect(() => () => { disposed = true }, 'dsh-plan-mode: close service lifetime')
 
@@ -299,6 +377,14 @@ export class PlanModeController extends Service {
         if (!/^#\s+\S/.test(args.plan.trim())) {
           throw new Error(`${EXIT_PLAN_MODE} requires a non-empty markdown plan starting with a # heading`)
         }
+        const cwd = agent.session.header.cwd
+        if (cwd !== undefined && cwd !== '') {
+          try {
+            await fs.writeFile(path.join(cwd, 'plan.md'), args.plan, 'utf-8')
+          } catch (writeError) {
+            ctx.logger.warn('dsh-plan-mode: could not write plan.md to workspace: %o', writeError)
+          }
+        }
         const interaction = ctx.get('userQuestions')
         if (interaction === undefined) {
           throw new Error('no user-questions channel is available to review the plan; ask the user to switch the session mode instead')
@@ -344,6 +430,13 @@ export class PlanModeController extends Service {
           throw new Error(feedback === ''
             ? 'The user chose to keep planning; revise the plan and present it again.'
             : `The user chose to keep planning; their feedback: ${feedback}`)
+        }
+        if (cwd !== undefined && cwd !== '') {
+          try {
+            await fs.writeFile(path.join(cwd, 'plan.md'), args.plan, 'utf-8')
+          } catch (writeError) {
+            ctx.logger.warn('dsh-plan-mode: could not write plan.md to workspace on approval: %o', writeError)
+          }
         }
         // Keep plan guidance for the rest of this assistant tool batch. The
         // silent selection is appended at the next accepted in-turn pre-step,
