@@ -195,6 +195,49 @@ export class UiConversation extends Service {
   readonly userText: UserTextRegistry
   private readonly bindings = new WeakMapWithValues<SessionBinding, BindingRecord>()
   private readonly images: HistoricalImageCache
+  private readonly viewListeners = new Map<SessionId, Set<(view: string) => void>>()
+  private readonly activeViews = new Map<SessionId, string>()
+
+  /**
+   * Set and publish the active view for a session.
+   * @param sessionId - Session identity.
+   * @param view - View identity to select (e.g. 'chat' | 'trajectory').
+   */
+  selectView(sessionId: SessionId, view: string): void {
+    this.activeViews.set(sessionId, view)
+    const listeners = this.viewListeners.get(sessionId)
+    if (listeners !== undefined) {
+      for (const listener of listeners) listener(view)
+    }
+  }
+
+  /**
+   * Subscribe to view changes for a session.
+   * @param sessionId - Session identity.
+   * @param listener - Callback receiving the new view id.
+   * @returns Disposer function.
+   */
+  onViewChange(sessionId: SessionId, listener: (view: string) => void): () => void {
+    let listeners = this.viewListeners.get(sessionId)
+    if (listeners === undefined) {
+      listeners = new Set()
+      this.viewListeners.set(sessionId, listeners)
+    }
+    listeners.add(listener)
+    return () => {
+      listeners?.delete(listener)
+      if (listeners?.size === 0) this.viewListeners.delete(sessionId)
+    }
+  }
+
+  /**
+   * Read the active view for a session.
+   * @param sessionId - Session identity.
+   * @returns Active view identifier, defaulting to 'chat'.
+   */
+  activeView(sessionId: SessionId): string {
+    return this.activeViews.get(sessionId) ?? 'chat'
+  }
 
   /**
    * @param ctx - owning Client context.

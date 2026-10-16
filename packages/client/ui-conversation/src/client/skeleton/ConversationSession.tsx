@@ -1,6 +1,7 @@
 /** Strict per-session header/body content inserted into the resident conversation layout. */
 
 import clsx from 'clsx'
+import { IconChevronLeftOutlineMedium, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
@@ -63,13 +64,24 @@ export function ConversationSessionHeader({
   const selectedId = useStore(s => s.view)
   const active = resolveActiveView(tabs, selectedId)
   const ancestry = useSessions(s => deriveAncestry(s, sessionId), equalBreadcrumbs)
-  const showTabs = !hideChrome && tabs.length > 1
   return (
     <>
       <div className={css.titleRow}>
         {!hideChrome && (
           <>
             <div className={css.titleCluster}>
+              {active?.id === 'trajectory' && (
+                <Tooltip label={t('view.backToChat')} delayMs={500}>
+                  <button
+                    type="button"
+                    className={css.backToChatButton}
+                    aria-label={t('view.backToChat')}
+                    onClick={() => { selectView('chat') }}
+                  >
+                    <IconChevronLeftOutlineMedium size={16} />
+                  </button>
+                </Tooltip>
+              )}
               <nav className={css.crumbs} aria-label={t('session.hierarchy')}>
                 {ancestry.map((summary, index) => {
                   const last = index === ancestry.length - 1
@@ -137,24 +149,6 @@ export function ConversationSessionHeader({
           {renderSlot('conversation.session.header.corner', {})}
         </div>
       </div>
-      {showTabs && (
-        // data-conversation-tabs: marks the tab strip, which the window-chrome
-        // geometry and the browser coverage lane anchor on.
-        <div className={css.tabs} role="tablist" data-conversation-tabs="">
-          {tabs.map(viewTab => (
-            <button
-              key={viewTab.id}
-              type="button"
-              role="tab"
-              aria-selected={viewTab.id === active?.id}
-              className={clsx(css.tab, viewTab.id === active?.id && css.tabActive)}
-              onClick={() => { selectView(viewTab.id) }}
-            >
-              {viewTab.label}
-            </button>
-          ))}
-        </div>
-      )}
     </>
   )
 }

@@ -1,0 +1,31 @@
+# ==============================================================================
+# CADDY REVERSE PROXY CONFIGURATION (BOSON STUDIO + GATEWAY)
+# ==============================================================================
+# Caddy otomatis menangani HTTPS/SSL gratis.
+# Ganti "app.yourdomain.com" dengan domain asli Anda.
+
+app.yourdomain.com {
+    # 1. Routing API LLM ke LiteLLM Gateway (Port 4000 localhost)
+    handle /v1/* {
+        # Proteksi: Tolak jika request browser berasal dari domain luar
+        @unauthorizedOrigin {
+            header Origin *
+            not header Origin https://app.yourdomain.com
+            not header Origin https://yourdomain.com
+        }
+        respond @unauthorizedOrigin "403 Forbidden: Akses dari luar domain ditolak." 403
+
+        reverse_proxy 127.0.0.1:4000 {
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    # 2. Routing Web Client ke Boson Studio (Port 3080 localhost)
+    handle {
+        reverse_proxy 127.0.0.1:3080 {
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+}

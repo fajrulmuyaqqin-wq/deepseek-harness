@@ -386,10 +386,15 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     },
     store: conversationStore,
     inject: (sessionId: SessionId, actions: BoundActions<typeof conversationStore>): ConversationSessionInjected => {
+      uiConversation.onViewChange(sessionId, (view) => {
+        activateView(sessionId, view)
+        actions.setView(view)
+      })
       const openView = (view: string, focus: string): void => {
         if (!viewTabs().some(tab => tab.id === view)) return
         activateView(sessionId, view)
         actions.openView(view, focus)
+        uiConversation.selectView(sessionId, view)
       }
       const inspectionTarget = () => uiConversation.views.entries().find(definition =>
         definition.toolCallFocus !== undefined
@@ -435,14 +440,21 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       'conversation.session.header.corner': { kind: 'single', scope: 'session' },
     },
     store: conversationStore,
-    inject: (sessionId: SessionId, actions: BoundActions<typeof conversationStore>): ConversationSessionHeaderInjected => ({
-      hooks: { conversationViews },
-      open: (id) => { workspaceNavigation.openSession(id) },
-      selectView: (view) => {
+    inject: (sessionId: SessionId, actions: BoundActions<typeof conversationStore>): ConversationSessionHeaderInjected => {
+      uiConversation.onViewChange(sessionId, (view) => {
         activateView(sessionId, view)
         actions.setView(view)
-      },
-    }),
+      })
+      return {
+        hooks: { conversationViews },
+        open: (id) => { workspaceNavigation.openSession(id) },
+        selectView: (view) => {
+          activateView(sessionId, view)
+          actions.setView(view)
+          uiConversation.selectView(sessionId, view)
+        },
+      }
+    },
   }, ConversationSessionHeader)
 
   const registerComposerBar = () => slots.register({

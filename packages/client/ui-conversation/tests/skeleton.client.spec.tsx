@@ -657,10 +657,15 @@ describe('ConversationRoot resident composer', () => {
 
     expect(b.view.getByTestId('view-chat')).toBeTruthy()
     expect(b.view.queryByTestId('view-new-view')).toBeNull()
-    expect(b.view.getByRole('tab', { name: 'Chat' }).getAttribute('aria-selected')).toBe('true')
-    expect(b.view.getByRole('tab', { name: 'New view' }).getAttribute('aria-selected')).toBe('false')
-    // The browser drag lane anchors its header tab-strip probe on this marker.
-    expect(b.view.getByRole('tablist').hasAttribute('data-conversation-tabs')).toBe(true)
+
+    // Switching to trajectory reveals the back button in the header
+    act(() => { b.store.actions.setView('trajectory') })
+    const backButton = b.view.getByRole('button', { name: '返回对话' })
+    expect(backButton).toBeTruthy()
+
+    // Clicking back button returns to chat view
+    fireEvent.click(backButton)
+    expect(b.view.getByTestId('view-chat')).toBeTruthy()
   })
 
   it('rolls the pending workspace label back when switching fails', async () => {

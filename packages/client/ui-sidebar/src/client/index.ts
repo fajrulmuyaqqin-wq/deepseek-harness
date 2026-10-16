@@ -10,6 +10,8 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the Session root standard-props merge.
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type { ISessions, SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SidebarPanelMetadata, SidebarRootInjected } from './contract/slots.ts'
 import { HeaderLeadingControls } from './HeaderLeadingControls.tsx'
 import { SidebarRoot } from './SidebarRoot.tsx'
@@ -46,6 +48,64 @@ export function apply(ctx: ClientContext): void {
   const workspaceNavigation = ctx.get('uiWorkspace') as unknown as WorkspaceNavigation
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar: dictionaries')
   const panels = createSnapshotStore<readonly SidebarPanelMetadata[]>([])
+  const sessions = ctx.get('sessions') as ISessions | undefined
+  const resolveCurrent = (list?: SessionListState): SessionId | undefined => {
+    if (!list) return undefined
+    return Object.values(list.byId).find(s => (s.retainedBy?.mainView ?? 0) > 0)?.id
+  }
+  const currentSessionId = createSnapshotStore<SessionId | undefined>(
+    resolveCurrent(sessions?.list.getSnapshot()),
+  )
+  const activeView = createSnapshotStore<string>('chat')
+
+  if (sessions !== undefined) {
+    ctx.effect(() => sessions.list.subscribe(() => {
+      const next = resolveCurrent(sessions.list.getSnapshot())
+      if (currentSessionId.getSnapshot() !== next) {
+        currentSessionId.set(next)
+      }
+    }), 'ui-sidebar: current session tracker')
+  }
+
+  ctx.effect(() => {
+    let unbindView: (() => void) | undefined
+    const syncForCurrent = (sid: SessionId | undefined) => {
+      unbindView?.()
+      unbindView = undefined
+      const uiConv = ctx.get('uiConversation') as {
+        activeView: (sessionId: SessionId) => string
+        onViewChange: (sessionId: SessionId, listener: (view: string) => void) => () => void
+      } | undefined
+      if (sid !== undefined && uiConv !== undefined) {
+        activeView.set(uiConv.activeView(sid))
+        unbindView = uiConv.onViewChange(sid, (v) => { activeView.set(v) })
+      } else {
+        activeView.set('chat')
+      }
+    }
+    syncForCurrent(currentSessionId.getSnapshot())
+    const disposeSessionSub = currentSessionId.subscribe(() => {
+      syncForCurrent(currentSessionId.getSnapshot())
+    })
+    return () => {
+      disposeSessionSub()
+      unbindView?.()
+    }
+  }, 'ui-sidebar: active view tracker')
+
+  const toggleTrajectory = (): void => {
+    const sid = currentSessionId.getSnapshot()
+    if (sid === undefined) return
+    const uiConv = ctx.get('uiConversation') as {
+      selectView: (sessionId: SessionId, view: string) => void
+    } | undefined
+    if (uiConv === undefined) return
+    const current = activeView.getSnapshot()
+    const next = current === 'trajectory' ? 'chat' : 'trajectory'
+    uiConv.selectView(sid, next)
+    activeView.set(next)
+  }
+
   const syncPanels = (): void => {
     const next = ctx.slots.entriesOfSlot('sidebar.panellist').map(({ options }) => {
       // The list registration requires an id; StoredEntry erases the slot kind.
@@ -71,7 +131,13 @@ export function apply(ctx: ClientContext): void {
       if (id === 'plugins' || id === 'schedules') ctx.get('productAnalytics')?.track('sidebar_menu_click', { menu_name: id === 'plugins' ? 'plugin' : 'cron' })
       ctx.layout.selectPanel(id)
     },
-    hooks: { panels, shortcuts: ctx.shortcuts.catalog },
+    toggleTrajectory,
+    hooks: {
+      panels,
+      shortcuts: ctx.shortcuts.catalog,
+      currentSessionId,
+      activeView,
+    },
   })
   ctx.slots.inject('sidebar', () => ctx.slots.register({
     name: 'sidebar',

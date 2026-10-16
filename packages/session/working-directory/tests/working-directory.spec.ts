@@ -355,4 +355,10 @@ describe('Session working directories', () => {
     await fiber.dispose()
     expect(f.ctx.tools.schemas().some(tool => tool.name === 'working_directory')).toBe(false)
   })
+
+  it('registers the cwd prompt variable reflecting the session directory', async () => {
+    await using f = await fixture()
+    const assembly = await f.ctx.systemPrompt.assemble({ agent: f.agent, scope: f.agent })
+    expect(assembly.variables['cwd']).toBe(f.root)
+  })
 })

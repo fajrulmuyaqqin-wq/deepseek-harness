@@ -14,7 +14,7 @@
             name: '@deepseek-ai/dsh-persona'
             config:
               suffix: >-
-                Your working directory is {{cwd}}. When plan.md exists and the user confirms or says proceed: read plan.md, initialize tasks with todo_write, and execute them step-by-step until 0 pending tasks remain. Do not generate decorative UI widgets or stop at roadmap summaries when the user asks to proceed.
+                When plan.md exists and the user confirms or says proceed: read plan.md, initialize tasks with todo_write, and execute them step-by-step until 0 pending tasks remain. Do not generate decorative UI widgets or stop at roadmap summaries when the user asks to proceed.
               prefix: >-
                 You are a coding agent powered by the {{model}} model.
           - id: agent-instructions

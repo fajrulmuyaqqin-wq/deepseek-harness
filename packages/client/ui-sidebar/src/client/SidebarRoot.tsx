@@ -19,7 +19,15 @@
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  FishLogo, IconNewChatOutlineMedium, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, isDarwinDesktop, ShortcutKeys, Tooltip,
+  FishLogo,
+  IconInspectOutlineMedium,
+  IconInspectOutlineRegular,
+  IconNewChatOutlineMedium,
+  IconNewChatOutlineRegular,
+  IconPanelLeftOutlineRegular,
+  isDarwinDesktop,
+  ShortcutKeys,
+  Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
@@ -91,15 +99,20 @@ export function SidebarRoot({
   startSession,
   toggleSidebar,
   selectPanel,
+  toggleTrajectory,
   usePanels,
   useShortcuts,
   usePanelInfo,
+  useCurrentSessionId,
+  useActiveView,
   t,
   renderSlot,
 }: SidebarRootComponentProps) {
   const panels = usePanels(snapshot => snapshot)
   const shortcut = useShortcuts(rows => rows.find(row => row.id === 'sidebar.left.toggle'))
   const newShortcut = useShortcuts(rows => rows.find(row => row.id === 'session.new'))
+  const hasCurrentSession = useCurrentSessionId ? useCurrentSessionId(id => id !== undefined) : false
+  const isTrajectoryActive = useActiveView ? useActiveView(view => view === 'trajectory') : false
   const toggleLabel = collapsed ? t('toggle.open') : t('toggle.collapse')
   // Wide content stays mounted while the collapse animates (fading via
   // .collapsed .wide), unmounts at settle, and remounts right away on expand.
@@ -275,6 +288,25 @@ export function SidebarRoot({
           </span>}
         </button>
       </Tooltip>
+
+      {hasCurrentSession && (
+        <Tooltip label={t('session.trajectory')} delayMs={500} side={captionTooltipSide} disabled={wide}>
+          <button
+            type="button"
+            className={clsx(css.trajectoryButton, isTrajectoryActive && css.trajectoryActive)}
+            aria-label={t('session.trajectory')}
+            aria-current={isTrajectoryActive ? 'page' : undefined}
+            onClick={() => { toggleTrajectory?.() }}
+          >
+            <span className={css.trajectoryContent}>
+              {wide
+                ? <IconInspectOutlineMedium size={14} />
+                : <IconInspectOutlineRegular size={windowsTitlebar ? 16 : 18} />}
+              {wide && <span className={clsx(css.trajectoryLabel, css.wide)}>{t('session.trajectory')}</span>}
+            </span>
+          </button>
+        </Tooltip>
+      )}
 
       {panels.length > 0 && (
         <nav className={css.panelList} aria-label={t('panels.label')}>

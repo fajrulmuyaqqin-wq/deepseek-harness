@@ -80,6 +80,7 @@
 }
 
 :global([data-windows-titlebar]) .collapsed .panelList,
+:global([data-windows-titlebar]) .collapsed .trajectoryButton,
 :global([data-windows-titlebar]) .collapsed .regionArea,
 :global([data-windows-titlebar]) .collapsed .footArea {
   display: none;
@@ -153,6 +154,7 @@
    render stays static. */
 .railIn .iconButton,
 .railIn .newSession,
+.railIn .trajectoryButton,
 .railIn .panelList,
 .railIn .regionArea {
   animation: rail-in 150ms var(--ds-ease-in-out) backwards;
@@ -479,6 +481,88 @@
 
 .newSession:is(:hover, :focus-visible) .newSessionShortcut { opacity: 1; }
 
+/* Trajectory toggle button for the active session. */
+.trajectoryButton {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  height: 32px;
+  padding: 6px 12px;
+  margin: -4px 2px 10px;
+  border-width: 1px;
+  border-style: solid;
+  border-color: transparent;
+  border-radius: var(--dsw-radius-md);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: background var(--ds-ease-in-out) 150ms, color var(--ds-ease-in-out) 150ms;
+}
+
+.trajectoryButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.trajectoryButton.trajectoryActive {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-state-business-primary);
+  font-weight: 600;
+}
+
+.trajectoryButton:focus-visible {
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: -2px;
+}
+
+.collapsed .trajectoryButton {
+  align-self: flex-start;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  margin: -4px 0 10px;
+  justify-content: center;
+  border-color: transparent;
+  background: transparent;
+}
+
+.collapsed .trajectoryButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.collapsed .trajectoryButton.trajectoryActive {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.trajectoryContent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.trajectoryContent > svg {
+  flex: none;
+}
+
+.trajectoryLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collapsed .trajectoryLabel {
+  display: none;
+}
+
 .panelList {
   flex: none;
   display: flex;
@@ -604,6 +688,7 @@
   .fading > *,
   .railIn .iconButton,
   .railIn .newSession,
+  .railIn .trajectoryButton,
   .railIn .panelList,
   .railIn .footArea,
   .railIn .regionArea {
