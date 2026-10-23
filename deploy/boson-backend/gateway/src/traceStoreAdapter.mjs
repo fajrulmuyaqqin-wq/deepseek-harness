@@ -101,31 +101,11 @@ export class LocalMicrobatchTraceStore extends BaseTraceStore {
   }
 
   _loadDiskCache() {
-    try {
-      if (fs.existsSync(TRACES_CACHE_FILE)) {
-        const raw = fs.readFileSync(TRACES_CACHE_FILE, 'utf-8')
-        const items = JSON.parse(raw)
-        if (Array.isArray(items)) {
-          for (const item of items) {
-            if (item && item.trace_id) {
-              this.primaryTraces.set(item.trace_id, item)
-            }
-          }
-          console.log(`[TraceStore] Hydrated ${this.primaryTraces.size} cached traces from disk`)
-        }
-      }
-    } catch (e) {
-      console.warn('[TraceStore] Failed loading disk cache:', e.message)
-    }
+    // PRUNED: Persistent trace storage is managed upstream by Temps PaaS OTel TimescaleDB engine
   }
 
   _persistDiskCache() {
-    try {
-      const items = Array.from(this.primaryTraces.values()).slice(0, 500)
-      fs.writeFileSync(TRACES_CACHE_FILE, JSON.stringify(items), 'utf-8')
-    } catch {
-      // Non-blocking disk persist
-    }
+    // PRUNED: Persistent trace storage is managed upstream by Temps PaaS OTel TimescaleDB engine
   }
 
   async _flushBatchQueue() {

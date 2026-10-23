@@ -105,6 +105,12 @@ services:
       XENDIT_SECRET_KEY: ${XENDIT_SECRET_KEY:-xnd_development_dzHLcepzxXLU4wkRCcruoro0dz2qCHWcMmlz2W1fZyJKOWEer4KvBgBXcxCGrV}
       XENDIT_PUBLIC_KEY: ${XENDIT_PUBLIC_KEY:-xnd_public_development_DzEPNPX4PbIk7keFwmDXC4obNyjuE3ztNFICV2P0RpRfmSebSXG7HuPxTMyZLSo}
       XENDIT_WEBHOOK_TOKEN: ${XENDIT_WEBHOOK_TOKEN:-HDmeJZjzpTJkJ1t2YmHiTOohL4lblqJbZQblm7SvOzzHO5Ar}
+      TEMPS_OTEL_ENDPOINT: ${TEMPS_OTEL_ENDPOINT:-http://172.18.0.1:18080/api/otel}
+      TEMPS_OTEL_HEADERS: ${TEMPS_OTEL_HEADERS:-Authorization=Bearer tk_CtkdKzrgVfSG3gkwZ2afPC3cSh6phHVgcBe5mbVW,X-Temps-Project-Id=1}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://172.18.0.1:18080/api/otel}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-Authorization=Bearer%20tk_CtkdKzrgVfSG3gkwZ2afPC3cSh6phHVgcBe5mbVW,X-Temps-Project-Id=1}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_SERVICE_NAME: boson-gateway
     volumes:
       - ./gateway/src:/app/src
       - ./gateway/node_modules:/app/node_modules
@@ -127,8 +133,10 @@ services:
       - UI_USERNAME=${UI_USERNAME:-admin}
       - UI_PASSWORD=${UI_PASSWORD:-admin}
       - LITELLM_OTEL_V2=true
-      - OTEL_EXPORTER_OTLP_PROTOCOL=http/json
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://gateway:8080
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://172.18.0.1:18080/api/otel
+      - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer%20tk_CtkdKzrgVfSG3gkwZ2afPC3cSh6phHVgcBe5mbVW,X-Temps-Project-Id=1
+      - OTEL_SERVICE_NAME=boson-litellm
       - LITELLM_LENS_URL=http://gateway:8080
       - LITELLM_LENS_SERVICE_TOKEN=${JWT_SECRET:-boson_super_secret_jwt_key_must_be_32_chars_long!}
       - LENS_GATEWAY_SECRET=${JWT_SECRET:-boson_super_secret_jwt_key_must_be_32_chars_long!}
