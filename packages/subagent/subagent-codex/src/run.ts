@@ -286,9 +286,9 @@ export async function startCodexRun(
         const s = spec.socketPath !== undefined
           ? net.createConnection({ path: spec.socketPath })
           : net.createConnection({
-              host: spec.socketHost ?? '127.0.0.1',
-              port: spec.socketPort ?? 4500,
-            })
+            host: spec.socketHost ?? '127.0.0.1',
+            port: spec.socketPort ?? 4500,
+          })
         const onAbort = (): void => {
           s.destroy()
           rejectSocket(request.signal.reason ?? new Error('subagent-codex: socket connection aborted'))

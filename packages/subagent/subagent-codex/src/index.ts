@@ -125,12 +125,12 @@ class CodexProvider implements SubagentProvider {
       throw codexStartupFailure(error)
     }
 
-function readVolatile<T>(val: Volatile<T> | T | undefined, fallback: T): T {
-  if (val !== null && typeof val === 'object' && 'get' in (val as object) && typeof (val as { get?: unknown }).get === 'function') {
-    return ((val as Volatile<T>).get() ?? fallback) as T
-  }
-  return ((val as T | undefined) ?? fallback) as T
-}
+    function readVolatile<T>(val: Volatile<T> | T | undefined, fallback: T): T {
+      if (val !== null && typeof val === 'object' && 'get' in (val as object) && typeof (val as { get?: unknown }).get === 'function') {
+        return ((val as Volatile<T>).get() ?? fallback) as T
+      }
+      return ((val as T | undefined) ?? fallback) as T
+    }
 
     const currentModel = readVolatile(this.config.model, undefined)
     const currentPermission = readVolatile(this.config.permissionMode, DEFAULT_CODEX_PERMISSION_MODE)

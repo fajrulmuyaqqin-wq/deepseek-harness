@@ -63,9 +63,9 @@ export async function probeSocket(options: {
     const s = socketPath !== undefined
       ? net.createConnection({ path: socketPath })
       : net.createConnection({
-          host: socketHost ?? '127.0.0.1',
-          port: socketPort ?? 4500,
-        })
+        host: socketHost ?? '127.0.0.1',
+        port: socketPort ?? 4500,
+      })
 
     const finish = (result: boolean): void => {
       s.destroy()
@@ -208,7 +208,7 @@ export async function ensureCodexDaemon(options: DaemonOptions): Promise<DaemonH
     if (reachable) {
       break
     }
-    await new Promise((r) => setTimeout(r, 150))
+    await new Promise(r => setTimeout(r, 150))
   }
 
   const finallyAlive = await probeSocket(options)
@@ -224,7 +224,7 @@ export async function ensureCodexDaemon(options: DaemonOptions): Promise<DaemonH
     dispose: async () => {
       if (child.exitCode === null) {
         child.kill('SIGTERM')
-        await new Promise((r) => setTimeout(r, 500))
+        await new Promise(r => setTimeout(r, 500))
         if (child.exitCode === null) {
           child.kill('SIGKILL')
         }
