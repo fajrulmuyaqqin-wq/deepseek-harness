@@ -449,6 +449,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       'conversation.session.header.corner': { kind: 'single', scope: 'session' },
       'conversation.session.header.views.actions': { kind: 'list', scope: 'root' },
     },
+    store: conversationStore,
     inject: (sessionId: SessionId, actions: BoundActions<typeof conversationStore>): ConversationSessionHeaderInjected => {
       uiConversation.onViewChange(sessionId, (view) => {
         activateView(sessionId, view)

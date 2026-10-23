@@ -428,6 +428,8 @@ export const ja = {
   'onboardingSave': '保存して続ける',
   'onboardingSaving': '保存中…',
   'keyRequired': '続けるにはAPIキーを入力してください。',
+  'useBosonPreset': 'クイック入力: Boson Gateway (127.0.0.1:8088)',
+  'bosonKeyHelp': '次のアドレスで個人の API キーを取得または生成します:',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -569,6 +571,8 @@ export const es = {
   onboardingSave: 'Guardar y continuar',
   onboardingSaving: 'Guardando…',
   keyRequired: 'Ingrese una clave API para continuar.',
+  useBosonPreset: 'Relleno rápido: Boson Gateway (127.0.0.1:8088)',
+  bosonKeyHelp: 'Obtenga o genere su clave API personal en:',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -710,6 +714,8 @@ export const fr = {
   onboardingSave: 'Enregistrer et continuer',
   onboardingSaving: 'Sauvegarde…',
   keyRequired: 'Entrez une clé API pour continuer.',
+  useBosonPreset: 'Remplissage rapide : Boson Gateway (127.0.0.1:8088)',
+  bosonKeyHelp: 'Obtenez ou générez votre clé API personnelle sur :',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -851,6 +857,8 @@ export const de = {
   onboardingSave: 'Speichern und fortfahren',
   onboardingSaving: 'Speichern…',
   keyRequired: 'Geben Sie einen API-Schlüssel ein, um fortzufahren.',
+  useBosonPreset: 'Schnell ausfüllen: Boson Gateway (127.0.0.1:8088)',
+  bosonKeyHelp: 'Holen oder erstellen Sie Ihren persönlichen API-Schlüssel unter:',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -992,6 +1000,8 @@ export const ru = {
   onboardingSave: 'Сохранить и продолжить',
   onboardingSaving: 'Сохранение…',
   keyRequired: 'Введите ключ API, чтобы продолжить.',
+  useBosonPreset: 'Быстрое заполнение: Boson Gateway (127.0.0.1:8088)',
+  bosonKeyHelp: 'Получите или сгенерируйте свой личный ключ API по адресу:',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -1133,4 +1143,6 @@ export const pt = {
   onboardingSave: 'Salvar e continuar',
   onboardingSaving: 'Salvando…',
   keyRequired: 'Insira uma chave de API para continuar.',
+  useBosonPreset: 'Preenchimento rápido: Boson Gateway (127.0.0.1:8088)',
+  bosonKeyHelp: 'Obtenha ou gere sua chave de API pessoal em:',
 } satisfies Record<keyof typeof en, string>

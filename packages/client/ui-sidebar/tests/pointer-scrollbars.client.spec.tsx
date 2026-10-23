@@ -27,6 +27,8 @@ const neverHook = (() => { throw new Error('shell must not read global hooks') }
 type AttentionSnapshot = Parameters<Parameters<SidebarRootComponentProps['useSessionStatus']>[0]>[0]
 const noAttention: AttentionSnapshot = new Map()
 const useSessionStatus: SidebarRootComponentProps['useSessionStatus'] = selector => selector(noAttention)
+const useCurrentSessionId: SidebarRootComponentProps['useCurrentSessionId'] = selector => selector(undefined)
+const useActiveView: SidebarRootComponentProps['useActiveView'] = selector => selector(undefined)
 
 afterEach(() => {
   cleanup()
@@ -45,7 +47,7 @@ function mountColumn(): { column: HTMLElement; quiet: () => boolean } {
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])} useEntryPins={selector => selector([])}
       useEntryActions={selector => selector(false)} setPinned={vi.fn()}
       useShortcuts={selector => selector([])}
-      useResource={useResource} useWorkspaces={neverHook} useActiveView={neverHook} useCurrentSessionId={neverHook}
+      useResource={useResource} useWorkspaces={neverHook} useActiveView={useActiveView} useCurrentSessionId={useCurrentSessionId}
       {...allowAllAccess}
       startSession={vi.fn()} toggleSidebar={vi.fn()} trackEntryClick={vi.fn()} t={t}
       renderSlot={((_key: string, owner: SidebarSectionOwnerProps) =>

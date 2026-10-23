@@ -31,6 +31,7 @@ export const en = {
 export const ja = {
   'session.new': '新規セッション',
   'session.new.label': '新規セッション',
+  'session.trajectory': '軌跡',
   'toggle.open': 'サイドバーを開く',
   'toggle.collapse': 'サイドバーを折りたたむ',
   'panels.label': 'グローバルパネル',
@@ -42,6 +43,7 @@ export const ja = {
 export const es = {
   'session.new': 'Nueva sesión',
   'session.new.label': 'Nueva sesión',
+  'session.trajectory': 'Trayectoria',
   'toggle.open': 'Abrir barra lateral',
   'toggle.collapse': 'Contraer barra lateral',
   'panels.label': 'Paneles globales',
@@ -53,6 +55,7 @@ export const es = {
 export const fr = {
   'session.new': 'Nouvelle séance',
   'session.new.label': 'Nouvelle séance',
+  'session.trajectory': 'Trajectoire',
   'toggle.open': 'Ouvrir la barre latérale',
   'toggle.collapse': 'Réduire la barre latérale',
   'panels.label': 'Panneaux globaux',
@@ -64,6 +67,7 @@ export const fr = {
 export const de = {
   'session.new': 'Neue Sitzung',
   'session.new.label': 'Neue Sitzung',
+  'session.trajectory': 'Trajektorie',
   'toggle.open': 'Seitenleiste öffnen',
   'toggle.collapse': 'Seitenleiste einklappen',
   'panels.label': 'Globale Bereiche',
@@ -75,6 +79,7 @@ export const de = {
 export const ru = {
   'session.new': 'Новая сессия',
   'session.new.label': 'Новая сессия',
+  'session.trajectory': 'Траектория',
   'toggle.open': 'Открыть боковую панель',
   'toggle.collapse': 'Свернуть боковую панель',
   'panels.label': 'Глобальные панели',
@@ -86,6 +91,7 @@ export const ru = {
 export const pt = {
   'session.new': 'Nova sessão',
   'session.new.label': 'Nova sessão',
+  'session.trajectory': 'Trajetória',
   'toggle.open': 'Abrir barra lateral',
   'toggle.collapse': 'Recolher barra lateral',
   'panels.label': 'Painéis globais',

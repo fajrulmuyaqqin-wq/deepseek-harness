@@ -91,6 +91,8 @@ app.use(cors({
     'x-lens-contract',
     'x-lens-internal',
     'idempotency-key',
+    'session',
+    'x-api-key',
   ],
 }))
 
@@ -338,23 +340,39 @@ function envelopeFail(res, status = 401, code = 40003, msg = 'Unauthorized') {
 }
 
 // ─────────────────────────────────────────────────────────────
-// MIDDLEWARE: DUAL AUTH (x-dsh-auth-token ATAU x-api-key ATAU Bearer sk_boson_...)
+// MIDDLEWARE: DUAL AUTH & UNIVERSAL SESSION RESOLUTION
 // ─────────────────────────────────────────────────────────────
-async function authenticateUser(req, res, next) {
-  let token = req.headers['x-dsh-auth-token'] || req.headers['x-api-key']
+function extractAuthToken(req) {
+  let token = req.headers['x-dsh-auth-token'] || req.headers['x-api-key'] || req.headers['session']
   const authHeader = req.headers['authorization']
-
   if (!token && authHeader && authHeader.startsWith('Bearer ')) {
     token = authHeader.slice(7).trim()
   }
+  if (!token && req.headers?.cookie) {
+    try {
+      const cookies = Object.fromEntries(
+        req.headers.cookie
+          .split(';')
+          .map(c => c.trim().split('='))
+          .filter(parts => parts.length >= 2)
+          .map(([k, ...v]) => [k.trim(), decodeURIComponent(v.join('='))])
+      )
+      token = cookies['craft_signed_session'] || cookies['signed_session'] || cookies['sb-access-token'] || null
+    } catch {
+      // ignore malformed cookie
+    }
+  }
+  return token || null
+}
 
-  if (!token) return envelopeFail(res, 401, 40003, 'Missing auth token or API key')
+async function resolveUserFromToken(token, req = null) {
+  if (!token) return { user: null, error: 'Missing auth token or API key' }
 
   try {
     // 0. Dukungan Studio Local Token (OpenDesign / Aethel Studio Local Runner)
     if (token === 'studio-local-token') {
-      const forwarded = req.headers['x-forwarded-for']
-      const directIp = req.socket?.remoteAddress || req.ip || ''
+      const forwarded = req?.headers?.['x-forwarded-for']
+      const directIp = req?.socket?.remoteAddress || req?.ip || ''
       const clientIp = typeof forwarded === 'string' && forwarded.trim()
         ? forwarded.split(',')[0].trim()
         : (typeof directIp === 'string' ? directIp.replace(/^::ffff:/, '').trim() : '')
@@ -362,9 +380,8 @@ async function authenticateUser(req, res, next) {
       const isLoopback = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === 'localhost'
       const isPrivateSubnet = clientIp.startsWith('172.') || clientIp.startsWith('10.') || clientIp.startsWith('192.168.') || clientIp.startsWith('fc00:') || clientIp.startsWith('fe80:')
 
-      // Tolak jika client IP berasal dari internet publik (misal reverse proxy atau direct public access)
       if (!isLoopback && !isPrivateSubnet && process.env.ALLOW_STUDIO_LOCAL_TOKEN !== 'true') {
-        return envelopeFail(res, 403, 40003, 'Akses studio-local-token hanya diizinkan untuk lingkungan runtime lokal/desktop.')
+        return { user: null, error: 'Akses studio-local-token hanya diizinkan untuk lingkungan runtime lokal/desktop.' }
       }
 
       const { data: fundedWallet } = await supabase
@@ -379,40 +396,40 @@ async function authenticateUser(req, res, next) {
       const { data: profile } = await supabase.from('profiles').select('email').eq('id', userId).maybeSingle()
       const email = profile?.email || 'mohfajrulmutaqin@gmail.com'
 
-      req.user = {
-        id: userId,
-        email,
-        auth_type: 'studio_local',
-        allowed_platforms: ['*'],
+      return {
+        user: {
+          id: userId,
+          email,
+          auth_type: 'studio_local',
+          allowed_platforms: ['*'],
+        },
       }
-      return next()
     }
 
     // 0b. Master Admin Token (LITELLM_MASTER_KEY atau sk-admin)
     const masterAdminKey = process.env.LITELLM_MASTER_KEY || 'sk-admin'
     if (token === masterAdminKey || token === 'sk-admin') {
-      req.user = {
-        id: '00000000-0000-0000-0000-000000000000',
-        email: 'admin@boson.local',
-        auth_type: 'master_admin',
-        allowed_platforms: ['*'],
+      return {
+        user: {
+          id: '00000000-0000-0000-0000-000000000000',
+          email: 'admin@boson.local',
+          auth_type: 'master_admin',
+          allowed_platforms: ['*'],
+        },
       }
-      return next()
     }
 
-    // 0c. Virtual API Key dari LiteLLM (Format: sk-... terdaftar di LiteLLM_VerificationToken untuk You, Service Account, Agent, dll)
+    // 0c. Virtual API Key dari LiteLLM
     if (token.startsWith('sk-')) {
       const litellmKey = await validateLiteLLMToken(token)
       if (litellmKey) {
         if (!litellmKey.valid) {
-          return envelopeFail(res, 403, 40003, litellmKey.message)
+          return { user: null, error: litellmKey.message }
         }
 
-        // Resolusi user Boson (profiles) terkait key ini
         let targetUserId = null
         let targetUserEmail = null
 
-        // A. Cek metadata jika ada spesifikasi user
         const metaUser = litellmKey.metadata?.boson_user_id || litellmKey.metadata?.user_id
         if (metaUser) {
           const { data: p } = await supabase.from('profiles').select('id, email').eq('id', metaUser).maybeSingle()
@@ -422,7 +439,6 @@ async function authenticateUser(req, res, next) {
           }
         }
 
-        // B. Cek user_id dari key jika berupa UUID valid
         if (!targetUserId && litellmKey.user_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(litellmKey.user_id)) {
           const { data: p } = await supabase.from('profiles').select('id, email').eq('id', litellmKey.user_id).maybeSingle()
           if (p) {
@@ -431,7 +447,6 @@ async function authenticateUser(req, res, next) {
           }
         }
 
-        // C. Cek user_id dari key jika berupa email
         if (!targetUserId && litellmKey.user_id && litellmKey.user_id.includes('@')) {
           const { data: p } = await supabase.from('profiles').select('id, email').eq('email', litellmKey.user_id).maybeSingle()
           if (p) {
@@ -440,7 +455,6 @@ async function authenticateUser(req, res, next) {
           }
         }
 
-        // D. Fallback: Cari user owner yang memiliki saldo aktif atau profil utama
         if (!targetUserId) {
           const { data: fundedWallet } = await supabase
             .from('wallets')
@@ -463,27 +477,28 @@ async function authenticateUser(req, res, next) {
         }
 
         if (!targetUserId) {
-          return envelopeFail(res, 401, 40003, 'Tidak ditemukan profil pengguna Boson yang terhubung dengan Virtual Key ini')
+          return { user: null, error: 'Tidak ditemukan profil pengguna Boson yang terhubung dengan Virtual Key ini' }
         }
 
-        req.user = {
-          id: targetUserId,
-          email: targetUserEmail,
-          auth_type: 'litellm_virtual_key',
-          key_name: litellmKey.key_name || litellmKey.key_alias || 'LiteLLM Virtual Key',
-          key_hash: litellmKey.token,
-          key_type: litellmKey.key_type || 'virtual_key',
-          agent_id: litellmKey.agent_id || null,
-          team_id: litellmKey.team_id || null,
-          allowed_models: litellmKey.models && litellmKey.models.length > 0 ? litellmKey.models : null,
-          allowed_platforms: ['*'],
-          target_app_id: '*',
+        return {
+          user: {
+            id: targetUserId,
+            email: targetUserEmail,
+            auth_type: 'litellm_virtual_key',
+            key_name: litellmKey.key_name || litellmKey.key_alias || 'LiteLLM Virtual Key',
+            key_hash: litellmKey.token,
+            key_type: litellmKey.key_type || 'virtual_key',
+            agent_id: litellmKey.agent_id || null,
+            team_id: litellmKey.team_id || null,
+            allowed_models: litellmKey.models && litellmKey.models.length > 0 ? litellmKey.models : null,
+            allowed_platforms: ['*'],
+            target_app_id: '*',
+          },
         }
-        return next()
       }
     }
 
-    // 1. Cek apakah ini Personal API Key (Format: sk_boson_... atau sk_aethel_...)
+    // 1. Personal API Key (Format: sk_boson_... atau sk_aethel_...)
     if (token.startsWith('sk_boson_') || token.startsWith('sk_aethel_')) {
       const keyHash = createHash('sha256').update(token).digest('hex')
       const { data: apiKeyRecord, error: keyErr } = await supabase
@@ -494,27 +509,28 @@ async function authenticateUser(req, res, next) {
         .maybeSingle()
 
       if (keyErr || !apiKeyRecord) {
-        return envelopeFail(res, 401, 40003, 'Invalid or revoked API key')
+        return { user: null, error: 'Invalid or revoked API key' }
       }
 
-      // Update waktu penggunaan terakhir secara asynchronous
       supabase.from('api_keys').update({ last_used_at: new Date() }).eq('id', apiKeyRecord.id).then()
 
-      req.user = {
-        id: apiKeyRecord.user_id,
-        email: apiKeyRecord.profiles?.email,
-        auth_type: 'api_key',
-        allowed_platforms: apiKeyRecord.allowed_platforms || ['*'],
-        target_app_id: apiKeyRecord.target_app_id || '*',
+      return {
+        user: {
+          id: apiKeyRecord.user_id,
+          email: apiKeyRecord.profiles?.email,
+          auth_type: 'api_key',
+          allowed_platforms: apiKeyRecord.allowed_platforms || ['*'],
+          target_app_id: apiKeyRecord.target_app_id || '*',
+        },
       }
-      return next()
     }
 
-    // 2. Cek apakah ini sesi PKCE code atau JWT Supabase
+    // 2. Cek apakah ini sesi JWT Supabase
     const user = await authGetUser(token)
     if (user && user.id) {
-      req.user = { id: user.id, email: user.email, auth_type: 'jwt', allowed_platforms: ['*'] }
-      return next()
+      return {
+        user: { id: user.id, email: user.email, auth_type: 'jwt', allowed_platforms: ['*'] },
+      }
     }
 
     // 3. Fallback: Cek pkce_sessions yang aktif
@@ -526,11 +542,27 @@ async function authenticateUser(req, res, next) {
       .maybeSingle()
 
     if (session && session.user_id) {
-      req.user = { id: session.user_id, email: session.profiles?.email || 'user@boson.id', auth_type: 'pkce', allowed_platforms: ['*'] }
-      return next()
+      return {
+        user: { id: session.user_id, email: session.profiles?.email || 'user@boson.id', auth_type: 'pkce', allowed_platforms: ['*'] },
+      }
     }
 
-    return envelopeFail(res, 401, 40003, 'Invalid or expired session token')
+    return { user: null, error: 'Invalid or expired session token' }
+  } catch (err) {
+    console.error('resolveUserFromToken error:', err)
+    return { user: null, error: 'Auth verification error' }
+  }
+}
+
+async function authenticateUser(req, res, next) {
+  const token = extractAuthToken(req)
+  if (!token) return envelopeFail(res, 401, 40003, 'Missing auth token or API key')
+
+  try {
+    const { user, error } = await resolveUserFromToken(token, req)
+    if (!user) return envelopeFail(res, 401, 40003, error || 'Unauthorized')
+    req.user = user
+    return next()
   } catch (err) {
     console.error('Auth verification error:', err)
     return envelopeFail(res, 401, 40003, 'Auth verification error')
@@ -778,9 +810,306 @@ app.post('/auth-api/v0/dsh/auth_init', async (req, res) => {
   })
 })
 
+// ─────────────────────────────────────────────────────────────
+// 1b. UNIFIED ARTCRAFT & BOSON FRONTEND API CONTRACT (JSON)
+// ─────────────────────────────────────────────────────────────
+
+app.get('/v1/session', async (req, res) => {
+  const token = extractAuthToken(req)
+  if (!token) {
+    return res.json({ success: true, logged_in: false })
+  }
+  const { user } = await resolveUserFromToken(token, req)
+  if (!user || !user.id) {
+    return res.json({ success: true, logged_in: false })
+  }
+  const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle()
+  const { data: wallet } = await supabase.from('wallets').select('*').eq('user_id', user.id).maybeSingle()
+
+  const username = profile?.full_name || profile?.email?.split('@')[0] || 'User'
+  return res.json({
+    success: true,
+    logged_in: true,
+    user: {
+      user_token: user.id,
+      username,
+      display_name: profile?.full_name || username,
+      email_address: profile?.email || user.email,
+    },
+    wallet: wallet ? {
+      balance_usd: (Number(wallet.normal_balance || 0) + Number(wallet.bonus_balance || 0) + Number(wallet.subscription_balance || 0)).toFixed(2),
+      normal_balance: Number(wallet.normal_balance || 0).toFixed(2),
+      bonus_balance: Number(wallet.bonus_balance || 0).toFixed(2),
+      subscription_balance: Number(wallet.subscription_balance || 0).toFixed(2),
+      tier: wallet.tier || 'free',
+    } : null,
+  })
+})
+
+app.post('/v1/login', authRateLimiter, async (req, res) => {
+  const { username_or_email, password } = req.body || {}
+  if (!username_or_email || !password) {
+    return res.status(400).json({ success: false, error_message: 'Username/email dan kata sandi wajib diisi' })
+  }
+
+  let email = String(username_or_email).trim()
+  if (!email.includes('@')) {
+    const { data: p } = await supabase
+      .from('profiles')
+      .select('email')
+      .ilike('full_name', email)
+      .maybeSingle()
+    if (p?.email) {
+      email = p.email
+    }
+  }
+
+  try {
+    const authData = await authSignIn(email, password)
+    const token = authData.access_token
+    if (!token) {
+      return res.status(401).json({ success: false, error_message: 'Gagal membuat sesi login' })
+    }
+
+    res.cookie('craft_signed_session', token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+    })
+
+    return res.json({
+      success: true,
+      signed_session: token,
+      user: {
+        id: authData.user?.id,
+        email: authData.user?.email,
+      },
+    })
+  } catch (err) {
+    return res.status(401).json({
+      success: false,
+      error_message: err.message || 'Email atau kata sandi tidak valid',
+    })
+  }
+})
+
+app.post('/v1/create_account', authRateLimiter, async (req, res) => {
+  const { username, email_address, password, password_confirmation } = req.body || {}
+  if (!email_address || !password) {
+    return res.status(400).json({ success: false, error_message: 'Email dan kata sandi wajib diisi' })
+  }
+  if (password_confirmation && password !== password_confirmation) {
+    return res.status(400).json({ success: false, error_message: 'Konfirmasi kata sandi tidak cocok' })
+  }
+
+  try {
+    const signupData = await authSignUp(email_address.trim(), password, username?.trim())
+    let token = null
+    try {
+      const authData = await authSignIn(email_address.trim(), password)
+      token = authData.access_token
+    } catch {
+      // login otomatis fallback
+    }
+
+    if (token) {
+      res.cookie('craft_signed_session', token, {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+      })
+    }
+
+    return res.json({
+      success: true,
+      signed_session: token,
+      user: {
+        id: signupData.id || signupData.user?.id,
+        email: email_address,
+      },
+    })
+  } catch (err) {
+    return res.status(400).json({
+      success: false,
+      error_message: err.message || 'Gagal mendaftar akun baru',
+    })
+  }
+})
+
+app.post(['/v1/logout', '/auth-api/v0/users/logout'], (req, res) => {
+  res.clearCookie('craft_signed_session', { path: '/' })
+  return res.json({ success: true, message: 'Logged out successfully' })
+})
+
+app.get('/v1/billing/active_subscriptions', async (req, res) => {
+  const token = extractAuthToken(req)
+  if (!token) {
+    return res.json({ success: true, active_subscriptions: [] })
+  }
+  const { user } = await resolveUserFromToken(token, req)
+  if (!user || !user.id) {
+    return res.json({ success: true, active_subscriptions: [] })
+  }
+
+  const { data: sub } = await supabase
+    .from('subscriptions')
+    .select('plan_tier, status')
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const { data: wallet } = await supabase
+    .from('wallets')
+    .select('tier')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  const activeTier = sub?.plan_tier || (wallet?.tier && wallet.tier !== 'free' ? wallet.tier : null)
+  if (!activeTier) {
+    return res.json({ success: true, active_subscriptions: [] })
+  }
+
+  return res.json({
+    success: true,
+    active_subscriptions: [
+      {
+        namespace: 'craft',
+        product_slug: activeTier,
+      },
+    ],
+  })
+})
+
+app.post([
+  '/v1/stripe_artcraft/checkout/subscription',
+  '/v1/stripe_artcraft/user_signup_subscription_checkout',
+  '/v1/stripe_artcraft/checkout/credits_pack',
+], async (req, res) => {
+  const plan = req.body?.plan || 'pro'
+  const creditsPack = req.body?.credits_pack
+  let amountUSD = 14.00
+  if (creditsPack) {
+    const match = String(creditsPack).match(/(\d+)/)
+    amountUSD = match ? parseFloat(match[1]) : 25.00
+  } else if (plan === 'starter') {
+    amountUSD = 9.00
+  } else if (plan === 'pro') {
+    amountUSD = 19.00
+  } else if (plan === 'teams') {
+    amountUSD = 49.00
+  } else if (plan === 'studio') {
+    amountUSD = 99.00
+  }
+
+  const externalId = `checkout_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  const redirectUrl = `${FRONTEND_PUBLIC_URL}/pricing?status=success&order=${externalId}`
+  const checkoutUrl = `${PLATFORM_PUBLIC_URL}/v1/xendit/sandbox-checkout?external_id=${encodeURIComponent(externalId)}&amount=${Math.round(amountUSD * 16000)}&redirect_url=${encodeURIComponent(redirectUrl)}`
+
+  return res.json({
+    success: true,
+    stripe_checkout_redirect_url: checkoutUrl,
+    checkoutUrl,
+  })
+})
+
+app.post([
+  '/v1/stripe_artcraft/portal/manage_plan',
+  '/v1/stripe_artcraft/portal/switch_plan',
+], (req, res) => {
+  return res.json({
+    success: true,
+    stripe_portal_url: `${FRONTEND_PUBLIC_URL}/pricing`,
+    portalUrl: `${FRONTEND_PUBLIC_URL}/pricing`,
+  })
+})
+
+app.post('/v1/web_referrals/record', (_req, res) => {
+  return res.json({ success: true })
+})
+
+// Multi-Modal Omnigen & Job Polling Simulation & Upstream Proxy
+const omniGenJobs = new Map()
+const STORYTELLER_UPSTREAM = process.env.STORYTELLER_UPSTREAM || 'http://127.0.0.1:12345'
+
+app.post(['/v1/omni_gen/generate/video', '/v1/omni_gen/generate/image', '/v1/omni_gen/generate/audio'], async (req, res) => {
+  try {
+    const upstreamRes = await fetch(`${STORYTELLER_UPSTREAM}${req.originalUrl || req.url}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(req.headers['authorization'] ? { Authorization: req.headers['authorization'] } : {}),
+      },
+      body: JSON.stringify(req.body),
+      signal: AbortSignal.timeout(1500),
+    })
+    if (upstreamRes.ok) {
+      const data = await upstreamRes.json()
+      return res.json(data)
+    }
+  } catch {
+    // Upstream offline fallback
+  }
+
+  const jobToken = `job_${Date.now()}_${randomUUID().slice(0, 8)}`
+  omniGenJobs.set(jobToken, {
+    jobToken,
+    createdAt: Date.now(),
+    model: req.body?.model || 'wan-2.1-t2v-14b',
+    prompt: req.body?.prompt || '',
+  })
+
+  return res.json({
+    success: true,
+    inference_job_token: jobToken,
+    jobToken,
+  })
+})
+
+app.get('/v1/jobs/job/:jobToken', async (req, res) => {
+  const { jobToken } = req.params
+  try {
+    const upstreamRes = await fetch(`${STORYTELLER_UPSTREAM}/v1/jobs/job/${jobToken}`, {
+      signal: AbortSignal.timeout(1500),
+    })
+    if (upstreamRes.ok) {
+      const data = await upstreamRes.json()
+      return res.json(data)
+    }
+  } catch {
+    // Upstream offline fallback
+  }
+
+  const job = omniGenJobs.get(jobToken)
+  const elapsed = job ? (Date.now() - job.createdAt) : 10000
+  if (elapsed < 3500) {
+    return res.json({
+      success: true,
+      state: {
+        status: { status: 'pending', maybe_extra_status_description: 'Generating neural frames...' },
+      },
+    })
+  }
+
+  return res.json({
+    success: true,
+    state: {
+      status: { status: 'complete_success' },
+      maybe_result: {
+        media_links: {
+          cdn_url: '/videos/features/WorldLabs_Demo_2.webm',
+        },
+      },
+    },
+  })
+})
+
 app.get(['/login', '/dsh/authorize'], async (req, res) => {
   const auth_id = req.query.auth_id || req.query.authorize_id
-  if (!auth_id) return res.status(400).send('Parameter auth_id diperlukan.')
+  if (!auth_id) return res.redirect(302, `${FRONTEND_PUBLIC_URL}/pricing`)
 
   res.send(`
     <!doctype html>
@@ -1378,7 +1707,7 @@ app.all(['/api/v1/open-design/*', '/v1/open-design/*', '/api/v1/analytics/*', '/
 // 3. PERSONAL ACCESS TOKEN / API KEYS MANAGEMENT (OMNIPRESENT)
 // ─────────────────────────────────────────────────────────────
 
-app.post('/api/v0/api-keys', authenticateUser, async (req, res) => {
+app.post(['/api/v0/api-keys', '/api/v1/api_keys', '/api/v1/api-keys', '/v1/api_keys', '/v1/api-keys'], authenticateUser, async (req, res) => {
   const { key_name = 'Default Key', allowed_platforms = ['*'], target_app_id = '*' } = req.body
   const rawKey = `sk_boson_${randomUUID().replace(/-/g, '')}`
   const key_prefix = rawKey.slice(0, 15)
@@ -1393,9 +1722,10 @@ app.post('/api/v0/api-keys', authenticateUser, async (req, res) => {
     target_app_id,
   }).select('id, key_name, key_prefix, allowed_platforms, target_app_id, created_at').single()
 
-  if (error) return res.status(500).json({ error: error.message })
+  if (error) return res.status(500).json({ success: false, error: error.message })
 
   return res.json({
+    success: true,
     message: 'API Key berhasil dibuat. Simpan kunci ini sekarang, karena tidak akan ditampilkan lagi.',
     api_key: rawKey,
     apiKey: rawKey,
@@ -1404,26 +1734,26 @@ app.post('/api/v0/api-keys', authenticateUser, async (req, res) => {
   })
 })
 
-app.get('/api/v0/api-keys', authenticateUser, async (req, res) => {
+app.get(['/api/v0/api-keys', '/api/v1/api_keys', '/api/v1/api-keys', '/v1/api_keys', '/v1/api-keys'], authenticateUser, async (req, res) => {
   const { data, error } = await supabase
     .from('api_keys')
     .select('id, key_name, key_prefix, allowed_platforms, target_app_id, last_used_at, is_revoked, created_at')
     .eq('user_id', req.user.id)
     .order('created_at', { ascending: false })
 
-  if (error) return res.status(500).json({ error: error.message })
-  return res.json({ keys: data })
+  if (error) return res.status(500).json({ success: false, error: error.message })
+  return res.json({ success: true, keys: data })
 })
 
-app.delete('/api/v0/api-keys/:id', authenticateUser, async (req, res) => {
+app.delete(['/api/v0/api-keys/:id', '/api/v1/api_keys/:id', '/api/v1/api-keys/:id', '/v1/api_keys/:id', '/v1/api-keys/:id'], authenticateUser, async (req, res) => {
   const { error } = await supabase
     .from('api_keys')
     .update({ is_revoked: true })
     .eq('id', req.params.id)
     .eq('user_id', req.user.id)
 
-  if (error) return res.status(500).json({ error: error.message })
-  return res.json({ message: 'API Key berhasil dicabut' })
+  if (error) return res.status(500).json({ success: false, error: error.message })
+  return res.json({ success: true, message: 'API Key berhasil dicabut' })
 })
 
 // ─────────────────────────────────────────────────────────────
@@ -3609,6 +3939,7 @@ app.post(['/v1/chat/completions', '/chat/completions'], authenticateUser, verify
             'X-Aethel-Platform-Id': platformId,
           },
           body: JSON.stringify(upstreamBody),
+          signal: AbortSignal.timeout(15000),
         })
       } catch (netErr) {
         console.warn('[Gateway Upstream Fetch Error]:', netErr.message)

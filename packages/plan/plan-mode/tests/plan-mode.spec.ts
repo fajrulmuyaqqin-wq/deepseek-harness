@@ -21,7 +21,6 @@ import UserQuestionService, {
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { PtcRuntime, type PtcRunRequest, type PtcRunResult } from '@deepseek-ai/dsh-ptc-runtime'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import { turnBoundaryProjectionDefinition } from '@deepseek-ai/dsh-agent-loop'
 import PlanModeController, { EXIT_PLAN_MODE, hasPlanIntent, hasProceedIntent, planProjectionDefinition, resolveConfig } from '../src/index.ts'
 import type { PlanModeConfig } from '../src/index.ts'
 import type { PlanUnitState } from '../src/types.ts'
@@ -1308,7 +1307,7 @@ describe('flexible plan mode & task guard', () => {
 
     await events.waterfall(
       'agent/pre-step',
-      { messages: [userMsg], turn: 1, step: 1, signal },
+      { messages: [userMsg], turn: 1, step: 1, modelSelection: TEST_MODEL_SELECTION, signal },
       () => Promise.resolve({ kind: 'enter' as const, messages: [userMsg] }),
     )
 
@@ -1329,7 +1328,7 @@ describe('flexible plan mode & task guard', () => {
 
     const decision = await events.waterfall(
       'agent/pre-step',
-      { messages: [userMsg], turn: 1, step: 2, signal },
+      { messages: [userMsg], turn: 1, step: 2, modelSelection: TEST_MODEL_SELECTION, signal },
       () => Promise.resolve({ kind: 'enter' as const, messages: [userMsg] }),
     )
 
@@ -1354,7 +1353,7 @@ describe('flexible plan mode & task guard', () => {
       execute: () => Promise.resolve([{ type: 'text', text: 'wrote todos' }]),
     }))
 
-    const result = await ctx.tools.execute({
+    const result = await executeToolFixture(ctx, {
       callId: ToolCallId('test-todo-1'),
       name: 'todo_write',
       arguments: {},
@@ -1381,7 +1380,7 @@ describe('flexible plan mode & task guard', () => {
       execute: () => Promise.resolve([{ type: 'text', text: 'wrote todos' }]),
     }))
 
-    const result = await ctx.tools.execute({
+    const result = await executeToolFixture(ctx, {
       callId: ToolCallId('test-todo-2'),
       name: 'todo_write',
       arguments: {},
