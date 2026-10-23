@@ -20,6 +20,7 @@ import type {
   SubprocessSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import net from 'node:net'
 import * as codex from '../src/index.ts'
 import {
   CODEX_PERMISSION_MODES,
@@ -27,6 +28,7 @@ import {
   codexAppServerArgv,
   DEFAULT_DISPOSE_GRACE_MS,
   disposeCodexChild,
+  disposeCodexSocket,
   startCodexRun,
   textTask,
   type CodexRunSpec,
@@ -737,9 +739,9 @@ describe('CodexAppServerWire', () => {
     const initialize = await child.peer.nextMethod('initialize')
     expect(initialize.params).toEqual({
       clientInfo: {
-        name: 'deepseek-harness',
-        title: 'DeepSeek Harness',
-        version: '0.0.1',
+        name: 'boson-studio',
+        title: 'Boson Studio',
+        version: '1.0.0',
       },
       capabilities: {
         experimentalApi: false,
@@ -2330,3 +2332,100 @@ describe('disposeCodexChild', () => {
     await disposal
   })
 })
+
+describe('disposeCodexSocket', () => {
+  it('closes wire and destroys socket', async () => {
+    const child = fakeChild()
+    const wire = defaultWire(child)
+    const s = new net.Socket()
+    const destroySpy = vi.spyOn(s, 'destroy')
+    const endSpy = vi.spyOn(s, 'end')
+    const closeSpy = vi.spyOn(wire, 'close')
+    await disposeCodexSocket(wire, s)
+    expect(closeSpy).toHaveBeenCalledOnce()
+    expect(endSpy).toHaveBeenCalledOnce()
+    expect(destroySpy).toHaveBeenCalledOnce()
+  })
+})
+
+describe('startCodexRun socket mode', () => {
+  it('connects to TCP socket, completes handshake and runs turn', async () => {
+    const serverSockets = new Set<net.Socket>()
+    const server = net.createServer((socket) => {
+      serverSockets.add(socket)
+      socket.on('close', () => serverSockets.delete(socket))
+      let buffer = ''
+      socket.on('data', (data) => {
+        buffer += data.toString()
+        for (;;) {
+          const idx = buffer.indexOf('\n')
+          if (idx < 0) break
+          const line = buffer.slice(0, idx).trim()
+          buffer = buffer.slice(idx + 1)
+          if (!line) continue
+          const frame = JSON.parse(line)
+          if (frame.method === 'initialize') {
+            socket.write(`${JSON.stringify({ id: frame.id, result: { userAgent: 'codex 0.153.4' } })}\n`)
+          } else if (frame.method === 'thread/start') {
+            socket.write(`${JSON.stringify({ id: frame.id, result: { thread: { id: 'th-1', ephemeral: true } } })}\n`)
+          } else if (frame.method === 'turn/start') {
+            socket.write(`${JSON.stringify({ id: frame.id, result: { turn: { id: 'turn-1' } } })}\n`)
+            socket.write(`${JSON.stringify({
+              method: 'item/completed',
+              params: {
+                threadId: 'th-1',
+                turnId: 'turn-1',
+                item: { type: 'agentMessage', phase: 'final_answer', text: 'Hello from socket daemon' },
+              },
+            })}\n`)
+            socket.write(`${JSON.stringify({
+              method: 'turn/completed',
+              params: {
+                threadId: 'th-1',
+                turn: { id: 'turn-1', status: 'completed' },
+              },
+            })}\n`)
+          }
+        }
+      })
+    })
+
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', () => resolve())
+    })
+    const address = server.address() as net.AddressInfo
+    const port = address.port
+
+    try {
+      const run = await startCodexRun(
+        {
+          prompt: [{ type: 'text', text: 'say hello' }],
+          cwd: process.cwd(),
+          signal: new AbortController().signal,
+          parent: fakeParent,
+        },
+        {
+          cwd: process.cwd(),
+          permissionMode: 'never',
+          env: {},
+          disposeGraceMs: 50,
+          socketHost: '127.0.0.1',
+          socketPort: port,
+          spawn: () => { throw new Error('should not spawn') },
+        },
+      )
+      const result = await run.result
+      expect(result.stopReason).toBe('completed')
+      expect(result.output).toEqual([
+        { type: 'text', text: 'Hello from socket daemon' },
+      ])
+      await run.dispose()
+    } finally {
+      for (const s of serverSockets) s.destroy()
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve())
+      })
+    }
+  })
+})
+

@@ -7,6 +7,7 @@
  * @module @deepseek-ai/dsh-subagent-codex/run
  */
 
+import net from 'node:net'
 import { randomUUID } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -31,6 +32,7 @@ import {
   CodexAppServerWire,
   type CodexWireFailureFacts,
 } from './wire.ts'
+import { resolveCodexBinary } from './daemon.ts'
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
@@ -41,16 +43,21 @@ interface CodexPackageManifest {
   }
 }
 
-const codexPackageJsonPath = createRequire(import.meta.url).resolve('@openai/codex/package.json')
-const codexPackageManifest = JSON.parse(
-  readFileSync(codexPackageJsonPath, 'utf8'),
-) as CodexPackageManifest
-
-/** Absolute package-local JavaScript wrapper selected by the package manifest. */
-const CODEX_PACKAGE_BIN = resolve(
-  dirname(codexPackageJsonPath),
-  codexPackageManifest.bin.codex,
-)
+/** Resolve package-local JavaScript wrapper when available. */
+function resolveCodexPackageBin(): string | undefined {
+  try {
+    const codexPackageJsonPath = createRequire(import.meta.url).resolve('@openai/codex/package.json')
+    const codexPackageManifest = JSON.parse(
+      readFileSync(codexPackageJsonPath, 'utf8'),
+    ) as CodexPackageManifest
+    return resolve(
+      dirname(codexPackageJsonPath),
+      codexPackageManifest.bin.codex,
+    )
+  } catch {
+    return undefined
+  }
+}
 
 /** Profile-selectable non-interactive Codex permission mode. */
 export type CodexPermissionMode =
@@ -132,8 +139,20 @@ export function codexStartupFailure(cause: unknown): Error {
  * Fixed package-local app-server command, independent of the host `PATH`.
  * @returns Node, the official wrapper, and the fixed app-server arguments.
  */
-export function codexAppServerArgv(): string[] {
-  return [process.execPath, CODEX_PACKAGE_BIN, 'app-server', '--stdio']
+export function codexAppServerArgv(binaryPath?: string): string[] {
+  if (binaryPath) {
+    const binary = resolveCodexBinary(binaryPath)
+    if (binary) return [binary, 'app-server', '--stdio']
+  }
+  const bin = resolveCodexPackageBin()
+  if (bin !== undefined) {
+    return [process.execPath, bin, 'app-server', '--stdio']
+  }
+  const binary = resolveCodexBinary()
+  if (binary) {
+    return [binary, 'app-server', '--stdio']
+  }
+  throw new Error('subagent-codex: @openai/codex package not found; configure socket connection instead')
 }
 
 /** Fully resolved inputs for one Codex app-server run. */
@@ -152,6 +171,14 @@ export interface CodexRunSpec {
   readonly spawn: (spec: SubprocessSpawnSpec) => SubprocessHandle
   /** Diagnostic sink for a post-publication error flattened into a result. */
   readonly onError?: (error: Error, stopReason: SubagentStopReason) => void
+  /** Custom engine binary path override. */
+  readonly binaryPath?: string
+  /** Unix domain socket path for direct socket connection. */
+  readonly socketPath?: string
+  /** TCP socket host (e.g. '127.0.0.1'). */
+  readonly socketHost?: string
+  /** TCP socket port (e.g. 4500). */
+  readonly socketPort?: number
 }
 
 function thrown(value: unknown): Error {
@@ -179,6 +206,20 @@ export function textTask(prompt: readonly ContentBlock[]): string[] {
     throw new Error('subagent-codex: the one-shot task must not be empty')
   }
   return texts
+}
+
+/**
+ * Close the private wire and destroy the socket connection.
+ * @param wire - private app-server protocol connection.
+ * @param socket - active network/uds socket.
+ */
+export async function disposeCodexSocket(
+  wire: CodexAppServerWire,
+  socket: net.Socket,
+): Promise<void> {
+  wire.close()
+  socket.end()
+  socket.destroy()
 }
 
 /**
@@ -231,74 +272,131 @@ export async function startCodexRun(
     throw new Error('subagent-codex: request was aborted before app-server startup')
   }
 
-  let child: SubprocessHandle
-  try {
-    child = spec.spawn({
-      argv: codexAppServerArgv(),
-      cwd: spec.cwd,
-      stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
-      graceMs: spec.disposeGraceMs,
-      env: spec.env,
-    })
-  } catch (error: unknown) {
-    throw new CodexRunFailure({
-      stage: 'initialize',
-      category: 'unknown',
-    }, thrown(error))
+  const isSocketMode = spec.socketPath !== undefined || spec.socketPort !== undefined
+  let child: SubprocessHandle | undefined
+  let socket: net.Socket | undefined
+
+  if (isSocketMode) {
+    try {
+      socket = await new Promise<net.Socket>((resolveSocket, rejectSocket) => {
+        if (request.signal.aborted) {
+          rejectSocket(request.signal.reason ?? new Error('subagent-codex: request was aborted before socket connection'))
+          return
+        }
+        const s = spec.socketPath !== undefined
+          ? net.createConnection({ path: spec.socketPath })
+          : net.createConnection({
+              host: spec.socketHost ?? '127.0.0.1',
+              port: spec.socketPort ?? 4500,
+            })
+        const onAbort = (): void => {
+          s.destroy()
+          rejectSocket(request.signal.reason ?? new Error('subagent-codex: socket connection aborted'))
+        }
+        request.signal.addEventListener('abort', onAbort, { once: true })
+        s.once('connect', () => {
+          request.signal.removeEventListener('abort', onAbort)
+          resolveSocket(s)
+        })
+        s.once('error', (err) => {
+          request.signal.removeEventListener('abort', onAbort)
+          rejectSocket(err)
+        })
+      })
+    } catch (error: unknown) {
+      throw new CodexRunFailure({
+        stage: 'initialize',
+        category: 'transport',
+      }, thrown(error))
+    }
+  } else {
+    try {
+      child = spec.spawn({
+        argv: codexAppServerArgv(spec.binaryPath),
+        cwd: spec.cwd,
+        stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
+        graceMs: spec.disposeGraceMs,
+        env: spec.env,
+      })
+    } catch (error: unknown) {
+      throw new CodexRunFailure({
+        stage: 'initialize',
+        category: 'unknown',
+      }, thrown(error))
+    }
   }
 
   const wire = new CodexAppServerWire(
-    child.stdout as NonNullable<SubprocessHandle['stdout']>,
-    child.stdin as NonNullable<SubprocessHandle['stdin']>,
+    isSocketMode ? socket! : (child!.stdout as NonNullable<SubprocessHandle['stdout']>),
+    isSocketMode ? socket! : (child!.stdin as NonNullable<SubprocessHandle['stdin']>),
     spec.permissionMode,
     spec.model,
   )
-  const onStderr = (chunk: Buffer | string): void => {
-    const bytes = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
-    try {
-      // Synchronous fd forwarding preserves byte order without owning a
-      // backpressure queue. A slow host sink can block this event-loop turn.
-      writeFileSync(process.stderr.fd, bytes)
-    } catch {
-      // Host stderr is an observation sink, not a child-run failure authority.
-    }
-  }
-  const onStderrError = (): void => {
-    // Stderr observation is auxiliary. JSON-RPC and child.done remain the
-    // only terminal authorities if the diagnostic stream itself fails.
-  }
-  child.stderr?.on('data', onStderr)
-  child.stderr?.on('error', onStderrError)
-  const disposeProcess = async (): Promise<void> => {
-    try {
-      await disposeCodexChild(wire, child)
-      // Let stderr already queued by the process close reach the Host before
-      // its forwarding listeners are detached.
-      await new Promise<void>((resolve) => { setImmediate(resolve) })
-    } finally {
-      child.stderr?.off('data', onStderr)
-      child.stderr?.off('error', onStderrError)
-    }
-  }
 
   let processFailureFacts: CodexFailureFacts | undefined
-  const processFailure: Promise<never> = child.done.then<never>(
-    (outcome) => {
-      processFailureFacts = {
-        stage: 'process',
-        category: 'process',
-        outcome,
+  let processFailure: Promise<never>
+  let disposeProcess: () => Promise<void>
+
+  if (isSocketMode) {
+    const s = socket!
+    processFailure = new Promise<never>((_resolve, reject) => {
+      s.on('error', (err) => {
+        processFailureFacts = { stage: 'process', category: 'transport' }
+        reject(new CodexRunFailure(processFailureFacts, thrown(err)))
+      })
+      s.on('close', () => {
+        processFailureFacts = { stage: 'process', category: 'transport' }
+        reject(new CodexRunFailure(processFailureFacts, new Error('subagent-codex: socket connection closed by peer')))
+      })
+    })
+    disposeProcess = async (): Promise<void> => {
+      await disposeCodexSocket(wire, s)
+    }
+  } else {
+    const onStderr = (chunk: Buffer | string): void => {
+      const bytes = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
+      try {
+        writeFileSync(process.stderr.fd, bytes)
+      } catch {
+        // Host stderr is an observation sink, not a child-run failure authority.
       }
-      throw new CodexRunFailure(processFailureFacts)
-    },
-    (error: unknown) => {
-      processFailureFacts = {
-        stage: 'process',
-        category: 'unknown',
+    }
+    const onStderrError = (): void => {
+      // Stderr observation is auxiliary. JSON-RPC and child.done remain the
+      // only terminal authorities if the diagnostic stream itself fails.
+    }
+    child!.stderr?.on('data', onStderr)
+    child!.stderr?.on('error', onStderrError)
+    disposeProcess = async (): Promise<void> => {
+      try {
+        await disposeCodexChild(wire, child!)
+        // Let stderr already queued by the process close reach the Host before
+        // its forwarding listeners are detached.
+        await new Promise<void>((resolve) => { setImmediate(resolve) })
+      } finally {
+        child!.stderr?.off('data', onStderr)
+        child!.stderr?.off('error', onStderrError)
       }
-      throw new CodexRunFailure(processFailureFacts, thrown(error))
-    },
-  )
+    }
+
+    processFailure = child!.done.then<never>(
+      (outcome) => {
+        processFailureFacts = {
+          stage: 'process',
+          category: 'process',
+          outcome,
+        }
+        throw new CodexRunFailure(processFailureFacts)
+      },
+      (error: unknown) => {
+        processFailureFacts = {
+          stage: 'process',
+          category: 'unknown',
+        }
+        throw new CodexRunFailure(processFailureFacts, thrown(error))
+      },
+    )
+  }
   // A normal post-result dispose also closes the process. Keep its expected
   // late rejection observed when the terminal result settles first.
   processFailure.catch(() => {})
@@ -399,6 +497,7 @@ export async function startCodexRun(
           endedBeforeTerminal
           && processFailureFacts === undefined
           && !runAbort.signal.aborted
+          && child !== undefined
         ) {
           try {
             const exited = await child.waitForExit(

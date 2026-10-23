@@ -147,6 +147,21 @@ function directoryEntries(
   }
   for (const provider of catalogProviderIds()) declare(provider, provider)
   for (const [provider, profile] of profiles) declare(provider, profile.displayName, profile.catalogError)
+  if (!entries.has('boson')) {
+    entries.set('boson', {
+      provider: 'boson',
+      displayName: 'Boson Gateway',
+      settingsNs,
+      settingsPath: ['providers', 'boson'],
+      declared: false,
+      defaultBaseURL: process.env.DEEPSEEK_BASE_URL || 'http://127.0.0.1:8088',
+      baseURLEnv: ['BOSON_BASE_URL', 'DEEPSEEK_BASE_URL'],
+      nativeAuth: {
+        env: ['BOSON_API_KEY', 'SK_BOSON_API_KEY', 'DEEPSEEK_API_KEY'],
+        oauth: false,
+      },
+    })
+  }
   return [...entries.values()]
 }
 

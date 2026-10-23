@@ -1,0 +1,11 @@
+Ringkasan Status Layanan Aktif
+Layanan / Service	Port / URL	Status	Keterangan & Penggunaan
+Boson Unified Gateway	http://127.0.0.1:8088
+http://127.0.0.1:5001	ONLINE	Gateway utama (OpenAI-compatible /v1, wallet metering, auth, billing).
+Admin Tier Dashboard	http://127.0.0.1:8088/admin/tiers	ONLINE	Visual dashboard manajemen harga paket, limit RPM, dan zero-cost models.
+User Billing Portal	http://127.0.0.1:8088/billing	ONLINE	Antarmuka pengguna untuk top-up saldo dan pilih paket langganan.
+Multi-Key LLM Rotator	http://127.0.0.1:3040	ONLINE & AKTIF	Pool multi-kunci AI Studio & Grok (sudah diuji coba inferensi 1+1= dan berhasil merespons 2).
+LiteLLM Smart Router	http://127.0.0.1:4000	ONLINE	Proxy multi-provider untuk routing model AI.
+Supabase Studio Dashboard	http://127.0.0.1:3001	ONLINE	Web GUI visual untuk mengelola database PostgreSQL & Auth users.
+PostgreSQL Database	127.0.0.1:5432	HEALTHY	Database inti (tabel profiles, wallets, usage_ledger, transactions).
+Antigravity Bridge	http://127.0.0.1:8089	ONLINE	Session runner bridge prompt.

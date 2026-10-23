@@ -28,6 +28,7 @@
     "build:lib:client": "tsc -b tsconfig.client.json && tsdown --config-loader native --env.DSH_BUILD_FACE client",
     "build:web": "pnpm --filter @deepseek-ai/dsh-web-frontend run build",
     "build:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run build",
+    "desktop": "./scripts/launch-desktop.sh",
     "dev:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run dev",
     "start:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run start",
     "prepare:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run prepare:package",

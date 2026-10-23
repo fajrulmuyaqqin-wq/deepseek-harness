@@ -2835,6 +2835,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-settings-agent-loop':
         specifier: workspace:*
         version: link:../../client/ui-settings-agent-loop
+      '@deepseek-ai/dsh-client-ui-settings-codex':
+        specifier: workspace:*
+        version: link:../../client/ui-settings-codex
       '@deepseek-ai/dsh-client-ui-settings-general':
         specifier: workspace:*
         version: link:../../client/ui-settings-general
@@ -3000,6 +3003,9 @@ importers:
       '@deepseek-ai/dsh-skill-filesystem':
         specifier: workspace:*
         version: link:../../skill/skill-filesystem
+      '@deepseek-ai/dsh-subagent-codex':
+        specifier: workspace:*
+        version: link:../../subagent/subagent-codex
       '@deepseek-ai/dsh-subprocess':
         specifier: workspace:*
         version: link:../../subprocess/subprocess
@@ -5115,6 +5121,42 @@ importers:
         version: 18.3.1(react@18.3.1)
 
   packages/client/ui-settings-agent-loop:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-remotes':
+        specifier: workspace:*
+        version: link:../../api/remotes
+      '@deepseek-ai/dsh-client-locale':
+        specifier: workspace:*
+        version: link:../locale
+      '@deepseek-ai/dsh-client-store':
+        specifier: workspace:*
+        version: link:../store
+      '@deepseek-ai/dsh-client-test-runtime':
+        specifier: workspace:*
+        version: link:../../test-support/client-runtime
+      '@deepseek-ai/dsh-client-ui-plugin-manager':
+        specifier: workspace:*
+        version: link:../ui-plugin-manager
+      '@deepseek-ai/dsh-client-ui-primitives':
+        specifier: workspace:*
+        version: link:../ui-primitives
+      '@deepseek-ai/dsh-client-ui-renderer':
+        specifier: workspace:*
+        version: link:../ui-renderer
+      '@deepseek-ai/dsh-client-ui-settings':
+        specifier: workspace:*
+        version: link:../ui-settings
+      '@deepseek-ai/dsh-client-ui-slots':
+        specifier: workspace:*
+        version: link:../ui-slots
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+
+  packages/client/ui-settings-codex:
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:~
@@ -14152,6 +14194,9 @@ importers:
       '@deepseek-ai/dsh-sdk-protocol':
         specifier: workspace:*
         version: link:../../sdk/protocol
+      '@deepseek-ai/dsh-settings':
+        specifier: workspace:*
+        version: link:../../settings/settings
       '@deepseek-ai/dsh-tool-subagent':
         specifier: workspace:*
         version: link:../tool-subagent

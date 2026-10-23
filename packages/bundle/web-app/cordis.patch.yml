@@ -52,7 +52,7 @@
         shutdownTimeoutMillis: 2000
         serviceName: deepseek-harness-desktop
         serviceVersion: !!js process.env.DSH_CLIENT_VERSION
-        endpoint: !!js process.env.DSH_PRODUCT_ANALYTICS_OTLP_URL
+        endpoint: !!js process.env.BOSON_PRODUCT_ANALYTICS_OTLP_URL ?? process.env.DSH_PRODUCT_ANALYTICS_OTLP_URL
 
     - id: product-analytics
       name: '@deepseek-ai/dsh-client-product-analytics'
@@ -65,6 +65,9 @@
     # delegation tools. The Plugins page edits this settings namespace.
     - id: subagent-model-selection-settings
       name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
+
+    - id: subagent-codex
+      name: '@deepseek-ai/dsh-subagent-codex'
 
     - id: message-feedback
       name: '@deepseek-ai/dsh-message-feedback'
@@ -444,6 +447,9 @@
     - id: ui-settings-subagent
       name: '@deepseek-ai/dsh-client-ui-settings-subagent'
 
+    - id: ui-settings-codex
+      name: '@deepseek-ai/dsh-client-ui-settings-codex'
+
     - id: ui-settings-web-search
       name: '@deepseek-ai/dsh-client-ui-settings-web-search'
 
@@ -562,6 +568,9 @@
   disabled: true
 
 - id: tool-subagent-fork
+  disabled: true
+
+- id: tool-subagent-codex
   disabled: true
 
 - id: workflow-ptc

@@ -248,8 +248,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const shownKeyFailure = credentialRequiredFailure ?? keyFailure
   // What the form currently shows, which is what an interrogation must ask:
   // an edited-but-unsaved endpoint, and a key typed but not yet stored.
-  const probeApi = stringAt(draft, 'api') ?? stringAt(fallback, 'api')
-  const probeBaseURL = stringAt(draft, 'baseURL') ?? stringAt(fallback, 'baseURL')
+  const probeApi = stringAt(draft, 'api') ?? stringAt(fallback, 'api') ?? (props.provider === 'boson' ? 'openai-completions' : undefined)
+  const probeBaseURL = stringAt(draft, 'baseURL') ?? stringAt(fallback, 'baseURL') ?? props.defaultBaseURL
   const probe = {
     settingsNs: namespace.ns,
     // Naming the route lets an adapter that already describes it answer from
@@ -267,12 +267,21 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
    */
   const applyOnce = async (): Promise<string | undefined> => {
     const ns = namespace.ns
+    let adjusted = draft
+    if (props.provider === 'boson') {
+      if (stringAt(adjusted, 'api') === undefined) {
+        adjusted = schema.setPath(adjusted, ['api'], 'openai-completions')
+      }
+      if (stringAt(adjusted, 'baseURL') === undefined && props.defaultBaseURL !== undefined) {
+        adjusted = schema.setPath(adjusted, ['baseURL'], props.defaultBaseURL)
+      }
+    }
     // A pi-ai profile names the conventional reference only when this page is
     // about to store a key. Otherwise the provider keeps its native auth path.
-    const next = layout === 'pi-ai' && stringAt(draft, 'apiKeyEnv') === undefined
+    const next = layout === 'pi-ai' && stringAt(adjusted, 'apiKeyEnv') === undefined
       && stringAt(fallback, 'apiKeyEnv') === undefined && keyValue.length > 0
-      ? schema.setPath(draft, ['apiKeyEnv'], keyRef)
-      : draft
+      ? schema.setPath(adjusted, ['apiKeyEnv'], keyRef)
+      : adjusted
     if (props.credentialOnly !== true) {
       // The same checker gates the submit button, so a card cannot reach this
       // with a bad row; it stays because the schema check below would refuse
@@ -399,9 +408,11 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     )
     // A provider with no native key authentication has no key for this field to store.
     const keylessNativeAuth = nativeAuth?.env.length === 0 && nativeAuth.oauth
-    const keyPlaceholder = keyHint === undefined || props.credentialRequired === true
-      ? t('keyPlaceholder')
-      : t(savedCredential ? 'keyPlaceholderSaved' : 'keyPlaceholderFallback').replace('{hint}', () => keyHint)
+    const keyPlaceholder = props.provider === 'boson' && !savedCredential && keyHint === undefined
+      ? 'sk_boson_...'
+      : keyHint === undefined || props.credentialRequired === true
+        ? t('keyPlaceholder')
+        : t(savedCredential ? 'keyPlaceholderSaved' : 'keyPlaceholderFallback').replace('{hint}', () => keyHint)
     /** What both family editors take: the rows, whose layer owns them, and the two writes. */
     const catalogProps = {
       models,
@@ -434,6 +445,19 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               disabled={disabled}
               onChange={(event) => { setKeyDraft(event.target.value) }}
             />
+            {props.provider === 'boson' ? (
+              <p style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted, #94a3b8)' }}>
+                {t('bosonKeyHelp')}{' '}
+                <a
+                  href="http://127.0.0.1:8088/billing"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: '#38bdf8', textDecoration: 'underline' }}
+                >
+                  Boson Dashboard ↗
+                </a>
+              </p>
+            ) : null}
             {credentialHint === undefined ? null : <p id={`${props.provider}-credential-hint`} className={styles[missingRefs ? 'notice' : detectedRef === undefined ? 'advancedHint' : 'savedNotice']}>{credentialHint}</p>}
             {shownKeyFailure === undefined ? null : <p className={styles['error']}>{t(shownKeyFailure)}</p>}
           </div>}

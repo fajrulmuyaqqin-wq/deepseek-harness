@@ -1,0 +1,137 @@
+model_list:
+  # ─────────────────────────────────────────────────────────────
+  # 1. DEEPSEEK FLASH (Primary Fast Coding & Multitask Agent)
+  # ─────────────────────────────────────────────────────────────
+  - model_name: deepseek-flash
+    litellm_params:
+      model: gemini/gemini-3.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+  - model_name: deepseek-flash
+    litellm_params:
+      model: gemini/gemini-flash-lite-latest
+      api_key: os.environ/GEMINI_API_KEY
+
+  # ─────────────────────────────────────────────────────────────
+  # 2. DEEPSEEK REASONER (Deep Logic & Problem Solving / R1)
+  # ─────────────────────────────────────────────────────────────
+  - model_name: deepseek-reasoner
+    litellm_params:
+      model: gemini/gemini-3.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+  - model_name: deepseek-reasoner
+    litellm_params:
+      model: gemini/gemini-flash-lite-latest
+      api_key: os.environ/GEMINI_API_KEY
+
+  # ─────────────────────────────────────────────────────────────
+  # 3. DEEPSEEK CHAT & PRO (General V3 / Pro)
+  # ─────────────────────────────────────────────────────────────
+  - model_name: deepseek-chat
+    litellm_params:
+      model: gemini/gemini-3.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+  - model_name: deepseek-chat
+    litellm_params:
+      model: gemini/gemini-flash-lite-latest
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: deepseek-v4-pro
+    litellm_params:
+      model: gemini/gemini-3.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+  - model_name: deepseek-v4-pro
+    litellm_params:
+      model: gemini/gemini-flash-lite-latest
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: gemini-2.5-flash
+    litellm_params:
+      model: gemini/gemini-3.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: claude-3-5-sonnet
+    litellm_params:
+      model: gemini/gemini-3.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: gpt-4o
+    litellm_params:
+      model: gemini/gemini-3.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: gemini-2.0-flash
+    litellm_params:
+      model: gemini/gemini-3.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: llama-3.3-70b-free
+    litellm_params:
+      model: gemini/gemini-3.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+
+router_settings:
+  routing_strategy: "least-busy"
+  num_retries: 1
+  timeout: 20
+  allowed_fails: 1
+  cooldown_time: 300
+  fallback_on_unsupported_params: true
+  fallbacks:
+    - deepseek-reasoner: ["deepseek-v4-pro", "deepseek-flash"]
+    - deepseek-v4-pro: ["deepseek-flash", "claude-3-5-sonnet"]
+    - deepseek-chat: ["deepseek-flash", "gemini-2.5-flash"]
+    - claude-3-5-sonnet: ["deepseek-flash", "gpt-4o"]
+    - gpt-4o: ["claude-3-5-sonnet", "deepseek-flash"]
+  context_window_fallbacks:
+    - gpt-4o: ["gemini-2.5-flash", "deepseek-flash"]
+    - claude-3-5-sonnet: ["gemini-2.5-flash", "deepseek-flash"]
+    - deepseek-chat: ["deepseek-flash"]
+    - deepseek-reasoner: ["deepseek-v4-pro", "deepseek-flash"]
+  model_group_alias:
+    "gpt-4": "gpt-4o"
+    "gpt-4-turbo": "gpt-4o"
+    "gpt-4o-mini": "deepseek-flash"
+    "gpt-3.5-turbo": "deepseek-flash"
+    "claude-3-5-sonnet-20241022": "claude-3-5-sonnet"
+    "claude-3-5-sonnet-latest": "claude-3-5-sonnet"
+    "claude-3-opus-20240229": "claude-3-5-sonnet"
+    "deepseek-ai/DeepSeek-V3": "deepseek-chat"
+    "deepseek-ai/DeepSeek-R1": "deepseek-reasoner"
+    "deepseek-coder": "deepseek-flash"
+    "gemini-1.5-pro": "gemini-2.5-flash"
+    "gemini-1.5-flash": "gemini-2.5-flash"
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  enable_public_model_hub: true
+
+litellm_settings:
+  drop_params: true
+  cache: true
+  cache_params:
+    type: "local"
+    default_in_memory_ttl: 3600
+  callbacks: ["prometheus", "otel"]
+  success_callback: ["otel"]
+  failure_callback: ["otel"]
+  require_auth_for_metrics_endpoint: false
+  public_model_groups:
+    - deepseek-flash
+    - deepseek-reasoner
+    - deepseek-chat
+    - deepseek-v4-pro
+    - gemini-2.5-flash
+    - claude-3-5-sonnet
+    - gpt-4o
+    - gemini-2.0-flash
+    - llama-3.3-70b-free
+  public_model_groups_links:
+    deepseek-flash: "https://deepseek.com"
+    deepseek-reasoner: "https://deepseek.com"
+    deepseek-chat: "https://deepseek.com"
+    deepseek-v4-pro: "https://deepseek.com"
+    claude-3-5-sonnet: "https://anthropic.com"
+    gpt-4o: "https://openai.com"
+    gemini-2.5-flash: "https://ai.google.dev"
+    gemini-2.0-flash: "https://ai.google.dev"
+    llama-3.3-70b-free: "https://meta.com"

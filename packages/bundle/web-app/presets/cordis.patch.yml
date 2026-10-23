@@ -108,6 +108,12 @@
                 config:
                   provider: fork
                   toolName: subagent_fork
+              - id: tool-subagent-codex
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: codex
+                  toolName: subagent_codex
+                  maxDepth: provider-managed
               - id: workflow-ptc
                 name: '@deepseek-ai/dsh-workflow-ptc'
                 config:

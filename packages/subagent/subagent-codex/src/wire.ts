@@ -268,9 +268,9 @@ export class CodexAppServerWire {
   async initialize(signal: AbortSignal): Promise<void> {
     object(await this.guarded(this.transport.request('initialize', {
       clientInfo: {
-        name: 'deepseek-harness',
-        title: 'DeepSeek Harness',
-        version: '0.0.1',
+        name: 'boson-studio',
+        title: 'Boson Studio',
+        version: '1.0.0',
       },
       capabilities: {
         experimentalApi: false,

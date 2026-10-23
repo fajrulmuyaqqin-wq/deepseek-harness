@@ -216,6 +216,30 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   return (
     <div className={styles['editor']}>
       <div className={styles['field']}>
+        <button
+          type="button"
+          className={styles['secondaryButton']}
+          disabled={profileDisabled}
+          onClick={() => {
+            setRoute('boson')
+            setDisplayName('Boson Gateway')
+            setBaseURL('http://127.0.0.1:8088')
+            setProtocol('openai-completions')
+            setModels([
+              { id: 'deepseek-chat', name: 'DeepSeek V3 (Chat)', contextWindow: 64000, maxTokens: 8192, input: ['text'] },
+              { id: 'deepseek-flash', name: 'DeepSeek V4.1 Flash', contextWindow: 1000000, maxTokens: 256000, input: ['text', 'image'] },
+              { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', contextWindow: 1000000, maxTokens: 256000, input: ['text'] },
+              { id: 'deepseek-reasoner', name: 'DeepSeek R1 (Reasoning)', contextWindow: 64000, maxTokens: 8192, input: ['text'] },
+              { id: 'claude-3-5-sonnet', name: 'Claude 3.5 Sonnet', contextWindow: 200000, maxTokens: 8192, input: ['text', 'image'] },
+              { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, maxTokens: 4096, input: ['text', 'image'] },
+              { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', contextWindow: 1000000, maxTokens: 8192, input: ['text', 'image'] },
+            ])
+          }}
+        >
+          {t('useBosonPreset')}
+        </button>
+      </div>
+      <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('customRoute')}</span>
         <input
           className={styles['input']}
@@ -282,6 +306,19 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
           disabled={disabled}
           onChange={(event) => { setKeyDraft(event.target.value) }}
         />
+        {route === 'boson' || normalizedBaseURL.includes('8088') ? (
+          <p style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted, #94a3b8)' }}>
+            {t('bosonKeyHelp')}{' '}
+            <a
+              href="http://127.0.0.1:8088/billing"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#38bdf8', textDecoration: 'underline' }}
+            >
+              Boson Dashboard ↗
+            </a>
+          </p>
+        ) : null}
         {/* A create card has no stored key to keep, so the blank case says
             what a blank field means here instead: this route may authenticate
             through the provider's own ambient discovery or OAuth. */}

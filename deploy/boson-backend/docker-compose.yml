@@ -1,0 +1,143 @@
+version: '3.8'
+
+services:
+  # 1. Database PostgreSQL dengan Ekstensi Supabase
+  db:
+    image: supabase/postgres:15.1.1.78
+    container_name: boson-db
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bosonsecretpassword}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./init-scripts/01-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Supabase GoTrue (Layanan Autentikasi Pengguna)
+  auth:
+    image: supabase/gotrue:v2.158.1
+    container_name: boson-auth
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${API_EXTERNAL_URL:-http://localhost:8000}/auth/v1
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-bosonsecretpassword}@db:5432/${POSTGRES_DB:-postgres}
+      GOTRUE_SITE_URL: ${SITE_URL:-http://localhost:3080}
+      GOTRUE_URI_ALLOW_LIST: "*"
+      GOTRUE_JWT_SECRET: ${JWT_SECRET:-boson_super_secret_jwt_key_must_be_32_chars_long!}
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_DISABLE_SIGNUP: "false"
+
+  # 3. PostgREST (REST API Otomatis untuk PostgreSQL)
+  rest:
+    image: postgrest/postgrest:v12.0.1
+    container_name: boson-rest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD:-bosonsecretpassword}@db:5432/${POSTGRES_DB:-postgres}
+      PGRST_DB_SCHEMAS: public,storage
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET:-boson_super_secret_jwt_key_must_be_32_chars_long!}
+
+  # 4. Supabase Studio (Web Dashboard Admin untuk memantau User & Transaksi)
+  studio:
+    image: supabase/studio:latest
+    container_name: boson-studio-dashboard
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${STUDIO_PORT:-3001}:3000"
+    environment:
+      STUDIO_PG_META_URL: http://gateway:8080
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-GantiPasswordPostgresYangSangatKuatDanPanjang123!}
+      DEFAULT_ORGANIZATION_NAME: "Boson Studio"
+      DEFAULT_PROJECT_NAME: "Production Backend"
+      SUPABASE_URL: http://gateway:8080
+      SUPABASE_PUBLIC_URL: ${API_EXTERNAL_URL:-http://localhost:8000}
+      SUPABASE_ANON_KEY: ${ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy_anon_key}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy_service_role_key}
+      SNIPPETS_MANAGEMENT_FOLDER: /app/snippets
+      EDGE_FUNCTIONS_MANAGEMENT_FOLDER: /app/functions
+      HOSTNAME: "0.0.0.0"
+    volumes:
+      - ./studio-data/snippets:/app/snippets
+      - ./studio-data/functions:/app/functions
+
+  # 5. Boson Studio Custom Gateway (Auth PKCE, Saldo Dompet & Inference Token Metering)
+  gateway:
+    build:
+      context: ./gateway
+    container_name: boson-gateway
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_PORT:-8088}:8080"
+      - "5001:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 8080
+      SUPABASE_URL: http://rest:3000
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy_service_role_key}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-GantiPasswordPostgresYangSangatKuatDanPanjang123!}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_NAME: ${POSTGRES_DB:-postgres}
+      DEEPSEEK_API_KEY: ${LITELLM_MASTER_KEY:-sk-admin}
+      DEEPSEEK_UPSTREAM: ${DEEPSEEK_UPSTREAM:-http://litellm:4000}
+      PLATFORM_PUBLIC_URL: ${PLATFORM_PUBLIC_URL:-http://localhost:8088}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-41454207765-igj2vl7sce0n9gbbjfm98ovb8p2okefs.apps.googleusercontent.com}
+      XENDIT_SECRET_KEY: ${XENDIT_SECRET_KEY:-xnd_development_dzHLcepzxXLU4wkRCcruoro0dz2qCHWcMmlz2W1fZyJKOWEer4KvBgBXcxCGrV}
+      XENDIT_PUBLIC_KEY: ${XENDIT_PUBLIC_KEY:-xnd_public_development_DzEPNPX4PbIk7keFwmDXC4obNyjuE3ztNFICV2P0RpRfmSebSXG7HuPxTMyZLSo}
+      XENDIT_WEBHOOK_TOKEN: ${XENDIT_WEBHOOK_TOKEN:-HDmeJZjzpTJkJ1t2YmHiTOohL4lblqJbZQblm7SvOzzHO5Ar}
+    volumes:
+      - ./gateway/src:/app/src
+      - ./gateway/node_modules:/app/node_modules
+
+  # 6. LiteLLM Proxy (Smart Router, Multi-Provider, OpenRouter & Fallback)
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: boson-litellm
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${LITELLM_PORT:-4000}:4000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-GantiPasswordPostgresYangSangatKuatDanPanjang123!}@db:5432/litellm
+      - STORE_MODEL_IN_DB=False
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-${DEEPSEEK_MASTER_KEY:-}}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-admin}
+      - UI_USERNAME=${UI_USERNAME:-admin}
+      - UI_PASSWORD=${UI_PASSWORD:-admin}
+      - LITELLM_OTEL_V2=true
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/json
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://gateway:8080
+      - LITELLM_LENS_URL=http://gateway:8080
+      - LITELLM_LENS_SERVICE_TOKEN=${JWT_SECRET:-boson_super_secret_jwt_key_must_be_32_chars_long!}
+      - LENS_GATEWAY_SECRET=${JWT_SECRET:-boson_super_secret_jwt_key_must_be_32_chars_long!}
+      - LITELLM_LENS_PUBLIC_URL=${PLATFORM_PUBLIC_URL:-http://localhost:8088}
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml
+      - ./litellm-runtime-config.json:/app/.venv/lib/python3.13/site-packages/litellm/proxy/_experimental/out/litellm-runtime-config.json:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+
+volumes:
+  db_data:
+    driver: local

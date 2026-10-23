@@ -1,0 +1,45 @@
+# Boson Studio Gateway & Observability Overlay
+# Menghubungkan client DeepSeek Harness / Boson Studio langsung ke:
+# 1. Boson Gateway (Port 8088) untuk Auth PKCE, Quota Guard, Token Metering
+# 2. LiteLLM Lens Observability (Port 4000) untuk OpenTelemetry Spans & Tracing
+
+- id: deepseek-account
+  config:
+    platformOrigin: http://127.0.0.1:8088
+    allowLoopbackHttp: true
+    inferenceOrigin: http://127.0.0.1:8088
+    rewriteBrowserOrigin: true
+
+- id: llm-deepseek
+  config:
+    baseURL: http://127.0.0.1:8088
+
+- id: llm-deepseek-account
+  config:
+    baseURL: http://127.0.0.1:8088
+
+- id: session-telemetry-otel
+  disabled: false
+  config:
+    mode: FEEDBACK_ONLY
+    shutdownTimeoutMillis: 3000
+    maxRequestBytes: 4000000
+    exporter:
+      url: http://127.0.0.1:4000/v1/logs
+      compression: none
+      timeoutMillis: 2000
+    processor:
+      scheduledDelayMillis: 5000
+      maxQueueSize: 2048
+      maxExportBatchSize: 512
+      exportTimeoutMillis: 2000
+
+- id: desktop-product-telemetry
+  disabled: false
+  config:
+    scheduledDelayMillis: 10000
+    timeoutMillis: 10000
+    exportTimeoutMillis: 10000
+    shutdownTimeoutMillis: 2000
+    serviceName: boson-studio
+    endpoint: http://127.0.0.1:4000/v1/traces

@@ -1,0 +1,2015 @@
+// ─────────────────────────────────────────────────────────────
+// BOSON STUDIO: BILLING & SELF-SERVICE ACCOUNT PORTAL (HTML5 / RESPONSIVE)
+// Portal Mandiri: Manajemen Saldo Multi-Bucket, Langganan Pro,
+// Top-Up QRIS/VA Xendit, Personal API Keys (sk_boson_...),
+// Transparansi Live Pricing & Audit Usage Ledger Realtime.
+// ─────────────────────────────────────────────────────────────
+
+export function renderBillingPortalHtml(platformPublicUrl) {
+  return `<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <title>Boson Studio — Billing & Developer Portal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: rgba(17, 24, 39, 0.75);
+      --card-border: rgba(31, 41, 61, 0.7);
+      --primary: #38bdf8;
+      --primary-hover: #0ea5e9;
+      --primary-glow: rgba(56, 189, 248, 0.25);
+      --accent: #6366f1;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(56, 189, 248, 0.08) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(99, 102, 241, 0.08) 0px, transparent 50%);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+      padding-bottom: 4rem;
+    }
+    code, pre, .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Top Navbar */
+    .navbar {
+      background: rgba(17, 24, 39, 0.85);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--card-border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 0.85rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: var(--text);
+    }
+    .brand-logo {
+      width: 34px;
+      height: 34px;
+      background: linear-gradient(135deg, #38bdf8, #6366f1);
+      border-radius: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 1.15rem;
+      color: white;
+      box-shadow: 0 4px 12px var(--primary-glow);
+    }
+    .brand-title {
+      font-weight: 700;
+      font-size: 1.15rem;
+      letter-spacing: -0.02em;
+    }
+    .brand-badge {
+      font-size: 0.7rem;
+      font-weight: 600;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--primary);
+      padding: 0.15rem 0.55rem;
+      border-radius: 9999px;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.55rem 1.1rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.15s ease;
+      border: 1px solid transparent;
+    }
+    .btn-sm {
+      padding: 0.35rem 0.75rem;
+      font-size: 0.8rem;
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: #0b1120;
+    }
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      box-shadow: 0 0 15px var(--primary-glow);
+    }
+    .btn-outline {
+      background: rgba(255, 255, 255, 0.03);
+      border-color: var(--card-border);
+      color: var(--text);
+    }
+    .btn-outline:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: rgba(239, 68, 68, 0.4);
+      color: #fca5a5;
+    }
+    .btn-danger:hover {
+      background: #ef4444;
+      color: white;
+    }
+
+    .container {
+      max-width: 1140px;
+      margin: 2rem auto;
+      padding: 0 1.5rem;
+    }
+
+    /* Tabs Navigation */
+    .tabs-nav {
+      display: flex;
+      gap: 0.5rem;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 0.5rem;
+      margin-bottom: 2rem;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .tab-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      padding: 0.6rem 1.1rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .tab-btn:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .tab-btn.active {
+      color: var(--primary);
+      background: rgba(56, 189, 248, 0.1);
+      border-color: rgba(56, 189, 248, 0.3);
+    }
+    .tab-pane {
+      display: none;
+    }
+    .tab-pane.active {
+      display: block;
+      animation: fadeIn 0.2s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Hero / Status Banner */
+    .hero-banner {
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(99, 102, 241, 0.12));
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      border-radius: 16px;
+      padding: 1.5rem 2rem;
+      margin-bottom: 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .hero-text h1 {
+      font-size: 1.5rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.25rem;
+    }
+    .hero-text p {
+      color: var(--text-muted);
+      font-size: 0.92rem;
+    }
+
+    /* Multi-Bucket Wallet Grid */
+    .wallet-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2.5rem;
+    }
+    .wallet-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 1.35rem;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    }
+    .wallet-card.total {
+      background: linear-gradient(135deg, rgba(17, 24, 39, 0.9), rgba(30, 41, 59, 0.9));
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+    .wallet-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.825rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 0.6rem;
+    }
+    .wallet-amount {
+      font-size: 1.85rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      font-family: 'JetBrains Mono', monospace;
+      color: #fff;
+    }
+    .wallet-desc {
+      font-size: 0.775rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+    }
+
+    .tag {
+      font-size: 0.675rem;
+      font-weight: 700;
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .tag-blue { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
+    .tag-purple { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+    .tag-green { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .tag-amber { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+
+    /* Section Styling */
+    .section-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+      letter-spacing: -0.01em;
+    }
+    .section-desc {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+    }
+
+    /* Pricing Plans */
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2.5rem;
+    }
+    .plan-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .plan-card.featured {
+      background: linear-gradient(180deg, rgba(17, 24, 39, 0.95), rgba(15, 23, 42, 0.95));
+      border: 1px solid rgba(56, 189, 248, 0.5);
+      box-shadow: 0 0 30px rgba(56, 189, 248, 0.15);
+    }
+    .plan-badge {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, #38bdf8, #6366f1);
+      color: #0b1120;
+      font-size: 0.725rem;
+      font-weight: 800;
+      padding: 0.25rem 0.85rem;
+      border-radius: 9999px;
+      box-shadow: 0 4px 10px rgba(56, 189, 248, 0.4);
+      white-space: nowrap;
+    }
+    .plan-name { font-size: 1.25rem; font-weight: 800; margin-bottom: 0.5rem; }
+    .plan-price { margin-bottom: 1.25rem; }
+    .price-num { font-size: 2.25rem; font-weight: 800; font-family: 'JetBrains Mono', monospace; color: #fff; }
+    .price-cycle { font-size: 0.85rem; color: var(--text-muted); }
+    .plan-features {
+      list-style: none;
+      margin-bottom: 2rem;
+      flex-grow: 1;
+    }
+    .plan-features li {
+      font-size: 0.875rem;
+      color: #cbd5e1;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+    }
+    .plan-features li::before {
+      content: '✓';
+      color: var(--primary);
+      font-weight: 800;
+    }
+
+    /* Deposit Box */
+    .deposit-box {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 2rem;
+      margin-bottom: 2.5rem;
+    }
+    .presets-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+    .preset-btn {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      padding: 0.65rem 1.15rem;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.875rem;
+      transition: all 0.15s ease;
+    }
+    .preset-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    .preset-btn.active {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: var(--primary);
+      color: var(--primary);
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
+    }
+    .input-field {
+      width: 100%;
+      background: #0b1120;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      color: #fff;
+      padding: 0.75rem 1rem;
+      font-size: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      margin-bottom: 1.5rem;
+    }
+    .input-field:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 10px var(--primary-glow);
+    }
+    .gateways-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1.75rem;
+    }
+    .gateway-option {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--card-border);
+      padding: 1rem;
+      border-radius: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 600;
+      font-size: 0.88rem;
+      transition: all 0.15s ease;
+    }
+    .gateway-option:hover {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: var(--primary);
+    }
+    .gateway-option.selected {
+      background: rgba(56, 189, 248, 0.1);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    /* Tables */
+    .table-container {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      overflow-x: auto;
+      margin-bottom: 2rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.88rem;
+    }
+    th {
+      background: rgba(11, 17, 32, 0.6);
+      color: var(--text-muted);
+      font-weight: 600;
+      padding: 0.85rem 1.25rem;
+      border-bottom: 1px solid var(--card-border);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    td {
+      padding: 0.9rem 1.25rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255, 255, 255, 0.02); }
+
+    /* Modals */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 1.5rem;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal-box {
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      max-width: 480px;
+      width: 100%;
+      padding: 2rem;
+      box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+      text-align: center;
+      animation: modalPop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes modalPop {
+      from { transform: scale(0.95); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+    .modal-title { font-size: 1.35rem; font-weight: 800; margin-bottom: 0.5rem; }
+    .modal-desc { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1.5rem; }
+    .modal-qr {
+      background: white;
+      padding: 1rem;
+      border-radius: 12px;
+      display: inline-block;
+      margin-bottom: 1.25rem;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    }
+
+    /* Key Card Box */
+    .key-box {
+      background: #0b1120;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      border-radius: 10px;
+      padding: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      color: #38bdf8;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.25rem;
+      word-break: break-all;
+    }
+    .code-block {
+      background: #0b1120;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      font-size: 0.825rem;
+      color: #94a3b8;
+      text-align: left;
+      margin-bottom: 1.25rem;
+      overflow-x: auto;
+    }
+
+    /* Transparent Pricing & Margin Allocation Styles */
+    .pricing-transparency-card {
+      background: linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(99, 102, 241, 0.05));
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      border-radius: 14px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .allocation-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 0.85rem;
+      margin-top: 1rem;
+    }
+    .alloc-box {
+      background: rgba(11, 17, 32, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+    }
+    .alloc-box:hover {
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+    .alloc-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .alloc-value {
+      font-size: 1.25rem;
+      font-weight: 800;
+      font-family: 'JetBrains Mono', monospace;
+      color: #38bdf8;
+      margin: 0.25rem 0;
+    }
+    .alloc-desc {
+      font-size: 0.725rem;
+      color: #64748b;
+      line-height: 1.35;
+    }
+    .provider-pill {
+      display: inline-flex;
+      align-items: center;
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.06);
+      color: #cbd5e1;
+      margin-top: 0.25rem;
+    }
+
+    /* Low Balance Warning Banner */
+    .low-balance-alert {
+      display: none;
+      margin-bottom: 2rem;
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(239, 68, 68, 0.1));
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      border-radius: 14px;
+      padding: 1.1rem 1.6rem;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+      box-shadow: 0 4px 20px rgba(245, 158, 11, 0.1);
+      animation: alertPulse 3s infinite alternate;
+    }
+    .low-balance-alert.critical {
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(185, 28, 28, 0.12));
+      border-color: rgba(239, 68, 68, 0.5);
+      box-shadow: 0 4px 25px rgba(239, 68, 68, 0.2);
+    }
+    @keyframes alertPulse {
+      from { border-color: rgba(245, 158, 11, 0.35); }
+      to { border-color: rgba(245, 158, 11, 0.75); }
+    }
+
+    /* Usage Analytics & Bar Chart */
+    .usage-metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .metric-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.1rem;
+    }
+    .metric-title {
+      font-size: 0.775rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.35rem;
+    }
+    .metric-value {
+      font-size: 1.45rem;
+      font-weight: 800;
+      font-family: 'JetBrains Mono', monospace;
+      color: #fff;
+    }
+    .metric-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+
+    .chart-box {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .chart-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .btn-toggle-group {
+      display: inline-flex;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 2px;
+    }
+    .btn-toggle {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.775rem;
+      font-weight: 600;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-toggle.active {
+      background: var(--primary);
+      color: #0b1120;
+    }
+    .bar-chart-container {
+      display: flex;
+      align-items: flex-end;
+      gap: 0.6rem;
+      height: 220px;
+      padding: 1rem 0.5rem 0.5rem 0.5rem;
+      border-bottom: 1px solid var(--card-border);
+      overflow-x: auto;
+    }
+    .bar-col {
+      flex: 1;
+      min-width: 28px;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      position: relative;
+      cursor: pointer;
+    }
+    .bar-fill {
+      width: 100%;
+      max-width: 38px;
+      background: linear-gradient(180deg, #38bdf8, #6366f1);
+      border-radius: 6px 6px 2px 2px;
+      transition: height 0.4s cubic-bezier(0.4, 0, 0.2, 1), transform 0.15s ease, filter 0.15s ease;
+      min-height: 4px;
+    }
+    .bar-col:hover .bar-fill {
+      filter: brightness(1.25);
+      transform: scaleY(1.03);
+    }
+    .bar-label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+      margin-top: 0.5rem;
+      text-align: center;
+      white-space: nowrap;
+    }
+    .bar-tooltip {
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      padding: 0.55rem 0.85rem;
+      border-radius: 8px;
+      font-size: 0.75rem;
+      color: #fff;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+      z-index: 50;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+    }
+    .bar-col:hover .bar-tooltip {
+      opacity: 1;
+      visibility: visible;
+      transform: translateX(-50%) translateY(-2px);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAVBAR -->
+  <nav class="navbar">
+    <a href="/billing" class="brand">
+      <div class="brand-logo">B</div>
+      <div>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span class="brand-title">Boson Studio</span>
+          <span class="brand-badge">SaaS Portal</span>
+        </div>
+      </div>
+    </a>
+    <div class="nav-actions">
+      <div id="userHeaderArea" style="display: flex; align-items: center; gap: 0.75rem;">
+        <button class="btn btn-outline btn-sm" onclick="openLoginModal()">Masuk / Login</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">
+
+    <!-- HERO STATUS -->
+    <div class="hero-banner">
+      <div class="hero-text">
+        <h1>Dashboard Akun & Billing</h1>
+        <p>Sistem monetisasi transparan, multi-tier wallet, dan personal API key lintas platform.</p>
+      </div>
+      <div style="display: flex; gap: 0.6rem; align-items: center;">
+        <span class="tag tag-green">● Zero-Lockout Active</span>
+        <span class="tag tag-blue" id="tierTag">FREE TIER</span>
+      </div>
+    </div>
+
+    <!-- LOW-BALANCE WARNING BANNER -->
+    <div class="low-balance-alert" id="lowBalanceBanner">
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <div style="font-size: 1.8rem; line-height: 1;" id="lowBalanceIcon">⚠️</div>
+        <div>
+          <div style="font-weight: 700; font-size: 0.95rem; color: #fbbf24;" id="lowBalanceTitle">Peringatan Saldo Menipis</div>
+          <div style="font-size: 0.825rem; color: #cbd5e1; margin-top: 0.2rem;" id="lowBalanceDesc">
+            Sisa saldo AI Anda tersisa <strong id="lowBalanceAmt" style="color: #fff;">$0.00</strong>. Segera top-up sebelum sesi coding dan inferensi streaming terhenti.
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="goToTopUpTab()" style="background: #f59e0b; color: #0b1120; font-weight: 700; border: none; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.35);">
+        ⚡ Top Up Sekarang (QRIS / VA)
+      </button>
+    </div>
+
+    <!-- TABS NAVIGATION -->
+    <div class="tabs-nav">
+      <button class="tab-btn active" onclick="switchTab('tab-wallet', this)">💳 Dompet & Saldo</button>
+      <button class="tab-btn" onclick="switchTab('tab-subscribe', this)">👑 Paket Langganan</button>
+      <button class="tab-btn" onclick="switchTab('tab-deposit', this)">⚡ Deposit (Pay-As-You-Go)</button>
+      <button class="tab-btn" onclick="switchTab('tab-apikeys', this)">🔑 Personal API Keys</button>
+      <button class="tab-btn" onclick="switchTab('tab-pricing', this)">📊 Tarif Live Provider</button>
+      <button class="tab-btn" onclick="switchTab('tab-history', this)">📜 Riwayat Pemakaian</button>
+    </div>
+
+    <!-- TAB 1: DOMPET & SALDO -->
+    <div class="tab-pane active" id="tab-wallet">
+      <div class="wallet-grid">
+        <div class="wallet-card total">
+          <div class="wallet-label">
+            <span>Total Saldo Aktif</span>
+            <span class="tag tag-green">Daya Guna</span>
+          </div>
+          <div class="wallet-amount" id="totalBalanceVal">$0.00</div>
+          <div class="wallet-desc">Gabungan saldo bonus, kuota langganan, dan deposit.</div>
+        </div>
+
+        <div class="wallet-card">
+          <div class="wallet-label">
+            <span>Deposit Bebas (PAYG)</span>
+            <span class="tag tag-green">Never Expires</span>
+          </div>
+          <div class="wallet-amount" id="normalBalanceVal">$0.00</div>
+          <div class="wallet-desc">Saldo top-up fleksibel tanpa batas kedaluwarsa.</div>
+        </div>
+
+        <div class="wallet-card">
+          <div class="wallet-label">
+            <span>Kuota Langganan (Pro)</span>
+            <span class="tag tag-purple">Monthly Pool</span>
+          </div>
+          <div class="wallet-amount" id="subsBalanceVal">$0.00</div>
+          <div class="wallet-desc">Kredit token aktif dari paket bulanan Anda.</div>
+        </div>
+
+        <div class="wallet-card">
+          <div class="wallet-label">
+            <span>Welcome Bonus</span>
+            <span class="tag tag-blue">Free Gift</span>
+          </div>
+          <div class="wallet-amount" id="bonusBalanceVal">$0.00</div>
+          <div class="wallet-desc">Bonus gratis pendaftaran akun baru ($2.00).</div>
+        </div>
+      </div>
+
+      <div class="hero-banner" style="background: rgba(17, 24, 39, 0.6); border-color: var(--card-border);">
+        <div>
+          <h3 style="font-size: 1.1rem; margin-bottom: 0.25rem;">Fitur Keunggulan: Hybrid Zero-Lockout</h3>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">
+            Berbeda dengan ChatGPT Plus atau Claude Pro yang membatasi 5 jam saat kuota habis, di Boson Studio sistem otomatis melanjutkan eksekusi Anda menggunakan saldo deposit Pay-As-You-Go tanpa downtime!
+          </p>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-primary btn-sm" onclick="switchTab('tab-deposit')">Top-Up Deposit</button>
+          <button class="btn btn-outline btn-sm" onclick="switchTab('tab-subscribe')">Langganan Pro</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: PAKET LANGGANAN -->
+    <div class="tab-pane" id="tab-subscribe">
+      <h2 class="section-title">Pilih Paket Langganan Bulanan</h2>
+      <p class="section-desc">Nikmati kuota token bernilai lebih tinggi (ekstra 20%) dengan proteksi Zero-Lockout.</p>
+
+      <div class="pricing-grid">
+        <!-- STARTER -->
+        <div class="plan-card">
+          <div class="plan-name">Developer Starter</div>
+          <div class="plan-price">
+            <span class="price-num">$9.99</span>
+            <span class="price-cycle">/ bulan (~Rp160.000)</span>
+          </div>
+          <ul class="plan-features">
+            <li><strong>Kredit kuota senilai $12.00</strong> (Bonus nilai 20%)</li>
+            <li>Akses penuh DeepSeek Flash & Reasoner (R1)</li>
+            <li>Akses model coding Gemini Flash Lite</li>
+            <li><strong>Zero-Lockout:</strong> Kuota habis otomatis sambung deposit</li>
+            <li>Rollover kuota aktif hingga 1 bulan berikutnya</li>
+          </ul>
+          <button class="btn btn-outline" onclick="subscribePlan('starter')">Pilih Paket Starter</button>
+        </div>
+
+        <!-- PRO (FEATURED) -->
+        <div class="plan-card featured">
+          <div class="plan-badge">Paling Populer & Direkomendasikan</div>
+          <div class="plan-name">Agentic Pro</div>
+          <div class="plan-price">
+            <span class="price-num">$14.99</span>
+            <span class="price-cycle">/ bulan (~Rp240.000)</span>
+          </div>
+          <ul class="plan-features">
+            <li><strong>Kredit kuota senilai $18.00</strong> (Bonus nilai 20%)</li>
+            <li><strong>Multi-Model Lengkap:</strong> DeepSeek V3/R1, Claude 3.5 Sonnet, GPT-4o</li>
+            <li>Multi-Agent Swarm & Terminal execution tanpa batas</li>
+            <li>Prioritas antrean eksekusi token di gateway</li>
+            <li><strong>Zero Hard-Lockout:</strong> Bebas dari kunci limit 5 jam</li>
+            <li>Rollover kuota aktif hingga 1 bulan berikutnya</li>
+          </ul>
+          <button class="btn btn-primary" onclick="subscribePlan('pro')">Aktifkan Agentic Pro ($14.99)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: TOP-UP DEPOSIT -->
+    <div class="tab-pane" id="tab-deposit">
+      <h2 class="section-title">Deposit Bebas (Pay-As-You-Go)</h2>
+      <p class="section-desc">Isi saldo sesuai kebutuhan tanpa tagihan rutin. Saldo <strong>tidak pernah hangus</strong>.</p>
+
+      <div class="deposit-box">
+        <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.95rem;">1. Pilih Nominal Top Up (IDR / USD)</div>
+        <div class="presets-row">
+          <button class="preset-btn" onclick="selectPreset(1.50, 25000, this)">Rp25.000 (~$1.50)</button>
+          <button class="preset-btn active" onclick="selectPreset(3.00, 50000, this)">Rp50.000 (~$3.00)</button>
+          <button class="preset-btn" onclick="selectPreset(6.00, 100000, this)">Rp100.000 (~$6.00)</button>
+          <button class="preset-btn" onclick="selectPreset(15.00, 250000, this)">Rp250.000 (~$15.00)</button>
+          <button class="preset-btn" onclick="selectPreset(30.00, 500000, this)">Rp500.000 (~$30.00)</button>
+        </div>
+
+        <div style="font-weight: 600; margin-bottom: 0.5rem; font-size: 0.85rem; color: var(--text-muted);">Atau Masukkan Nominal Kustom (USD)</div>
+        <input type="number" id="customAmount" class="input-field" value="3.00" step="0.5" min="1.5" oninput="clearPresets()">
+
+        <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.95rem;">2. Pilih Jalur Pembayaran Resmi Xendit</div>
+        <div class="gateways-row">
+          <div class="gateway-option selected" onclick="selectGateway('qris', this)">
+            <span>📱</span> QRIS (GoPay/OVO/Dana/BCA)
+          </div>
+          <div class="gateway-option" onclick="selectGateway('va', this)">
+            <span>🏦</span> Virtual Account Bank
+          </div>
+          <div class="gateway-option" onclick="selectGateway('card', this)">
+            <span>💳</span> Kartu Kredit / Debit
+          </div>
+        </div>
+
+        <button class="btn btn-primary" id="btnDeposit" onclick="submitDeposit()" style="width: 100%; padding: 0.85rem;">
+          Lanjutkan Pembayaran Top-Up
+        </button>
+
+        <!-- PENGATURAN BATAS PENGELUARAN MAKSIMAL (USER SPENDING LIMIT) -->
+        <div style="margin-top: 1.75rem; padding-top: 1.5rem; border-top: 1px solid var(--card-border);">
+          <div style="font-weight: 700; font-size: 0.95rem; color: #38bdf8; display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem;">
+            <span>🛡️</span> Batas Pengeluaran Maksimal Pribadi (Max Budget Cap)
+          </div>
+          <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.45; margin-bottom: 0.85rem;">
+            Lindungi pengeluaran akun Anda. Anda bebas menentukan batas maksimal pengeluaran bulanan ($ USD). Jika mencapai batas ini, inferensi otomatis terjeda agar saldo Anda tidak terkuras berlebihan.
+          </p>
+
+          <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+            <div style="position: relative; flex: 1; min-width: 170px;">
+              <span style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-weight: 700;">$</span>
+              <input type="number" id="inputUserMaxBudget" class="input-field" placeholder="Bebas / Default ($100)" step="5" min="1" style="padding-left: 2.2rem; margin-bottom: 0;">
+            </div>
+            <button class="btn btn-outline" id="btnSaveMaxBudget" onclick="saveUserMaxBudget()" style="padding: 0.75rem 1.25rem;">
+              Simpan Batas Budget
+            </button>
+            <button class="btn btn-ghost" onclick="resetUserMaxBudget()" style="padding: 0.75rem 0.75rem; font-size: 0.8rem; color: var(--text-muted); cursor: pointer;">
+              Reset Default
+            </button>
+          </div>
+          <div id="maxBudgetStatusMsg" style="font-size: 0.775rem; color: #10b981; margin-top: 0.5rem; display: none;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: PERSONAL API KEYS -->
+    <div class="tab-pane" id="tab-apikeys">
+      <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1rem;">
+        <div>
+          <h2 class="section-title">Personal API Keys (sk_boson_...)</h2>
+          <p class="section-desc" style="margin-bottom: 0;">Gunakan API key pribadi Anda di Cursor, VSCode Extension, Claude Code, Aider, dan terminal CLI. Penggunaan key ini memotong saldo <strong>Deposit (Pay-As-You-Go)</strong> Anda per token.</p>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openCreateKeyModal()">+ Buat API Key Baru</button>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Nama Kunci</th>
+              <th>Key Prefix</th>
+              <th>Platform yang Diizinkan</th>
+              <th>Terakhir Digunakan</th>
+              <th>Dibuat</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="apiKeysTableBody">
+            <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">Memuat daftar API key...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Panduan Integrasi Cepat -->
+      <div class="deposit-box" style="margin-top: 1.5rem;">
+        <h3 style="font-size: 1rem; margin-bottom: 0.75rem;">⚡ Cara Pakai di Terminal / Editor Anda:</h3>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+          Cukup ekspor variabel lingkungan berikut di terminal Anda untuk menghubungkan Cursor, Claude Code, atau Aider ke gateway Boson Studio:
+        </p>
+        <div class="code-block mono" id="integrationSnippet">
+export ANTHROPIC_BASE_URL="http://127.0.0.1:8088/v1"<br>
+export ANTHROPIC_API_KEY="sk_boson_kunci_anda_di_sini"
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: TARIF LIVE PROVIDER -->
+    <div class="tab-pane" id="tab-pricing">
+      <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 0.75rem;">
+        <div>
+          <h2 class="section-title">Transparansi Tarif Token Realtime</h2>
+          <p class="section-desc" style="margin-bottom: 0;">Harga modal asli hulu penyedia LLM resmi + Fair Margin 15%. Tanpa markup tersembunyi.</p>
+        </div>
+        <div id="syncBadge" style="font-size: 0.75rem; color: var(--primary); background: rgba(56, 189, 248, 0.1); padding: 0.3rem 0.6rem; border-radius: 6px;">
+          ● Live Upstream Synced
+        </div>
+      </div>
+
+      <!-- KARTU ALOKASI MARGIN 15% TRANSPARAN -->
+      <div class="pricing-transparency-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+          <div style="font-weight: 700; font-size: 1rem; color: #38bdf8; display: flex; align-items: center; gap: 0.5rem;">
+            <span>🛡️</span> Prinsip Transparansi Fair Cost-Plus (Zero-Loss Protection)
+          </div>
+          <span class="tag tag-blue" style="font-size: 0.8rem; padding: 0.25rem 0.65rem;">Total Alokasi: +15.0%</span>
+        </div>
+        <p style="font-size: 0.825rem; color: #94a3b8; line-height: 1.5; margin: 0.65rem 0 0.5rem 0;">
+          Kami menjamin harga yang adil bagi pelanggan dan bebas kerugian operasional bagi startup. Setiap token dihitung murni dari <strong>harga modal asli hulu (official upstream wholesale)</strong> ditambah <strong>15% alokasi proteksi & operasional</strong> dengan rincian terbuka:
+        </p>
+
+        <div class="allocation-grid">
+          <div class="alloc-box">
+            <div class="alloc-title"><span>💳 Payment Gateway</span><span style="color: #38bdf8;">1.0%</span></div>
+            <div class="alloc-value">~0.7% – 1.5%</div>
+            <div class="alloc-desc">Biaya transaksi resmi Xendit (QRIS 0.7% & VA Bank flat fee).</div>
+          </div>
+          <div class="alloc-box">
+            <div class="alloc-title"><span>💱 Buffer Kurs Valas</span><span style="color: #38bdf8;">2.5%</span></div>
+            <div class="alloc-value">~2.0% – 2.5%</div>
+            <div class="alloc-desc">Cadangan fluktuasi kurs bank kartu kredit (USD ke IDR).</div>
+          </div>
+          <div class="alloc-box">
+            <div class="alloc-title"><span>🖥️ Server & Bandwidth</span><span style="color: #38bdf8;">1.5%</span></div>
+            <div class="alloc-value">~1.5%</div>
+            <div class="alloc-desc">Infrastruktur proxy gateway, SSL, dan latensi rendah.</div>
+          </div>
+          <div class="alloc-box">
+            <div class="alloc-title"><span>🚀 Net Startup Margin</span><span style="color: #38bdf8;">10.0%</span></div>
+            <div class="alloc-value">~10.0%</div>
+            <div class="alloc-desc">Operasional, pemeliharaan sistem, audit keamanan, & support.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-container" style="margin-top: 1rem;">
+        <table>
+          <thead>
+            <tr>
+              <th>Model AI & Provider Asli</th>
+              <th>Harga Modal Hulu Asli (Wholesale)</th>
+              <th>Alokasi Margin</th>
+              <th>Tarif Akhir Anda (per 1M / 1K Token)</th>
+              <th>Daya Jangkau Saldo Anda</th>
+            </tr>
+          </thead>
+          <tbody id="pricingTableBody">
+            <tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">Memuat data tarif realtime...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 6: RIWAYAT PEMAKAIAN -->
+    <div class="tab-pane" id="tab-history">
+      <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1.25rem;">
+        <div>
+          <h2 class="section-title">Riwayat Pemotongan & Konsumsi Token</h2>
+          <p class="section-desc" style="margin-bottom: 0;">Visualisasi grafik harian dan audit log pemotongan saldo token berdasarkan live pricing per turn percakapan.</p>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="refreshUsageSection()">↻ Refresh</button>
+      </div>
+
+      <!-- KARTU METRIK RINGKASAN PEMAKAIAN -->
+      <div class="usage-metrics-grid">
+        <div class="metric-card">
+          <div class="metric-title">Total Biaya Pemakaian</div>
+          <div class="metric-value" id="metricTotalCost" style="color: #38bdf8;">$0.000000</div>
+          <div class="metric-sub" id="metricCostSub">Rentang waktu terpilih</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Total Token Terpakai</div>
+          <div class="metric-value" id="metricTotalTokens" style="color: #a78bfa;">0</div>
+          <div class="metric-sub" id="metricTokenSub">Prompt + Completion</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Frekuensi Turn Inferensi</div>
+          <div class="metric-value" id="metricTotalTurns" style="color: #34d399;">0 Turns</div>
+          <div class="metric-sub">Sesi percakapan coding AI</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Rata-rata Biaya / Turn</div>
+          <div class="metric-value" id="metricAvgCost" style="color: #facc15;">$0.0000</div>
+          <div class="metric-sub">Efisiensi biaya AI Anda</div>
+        </div>
+      </div>
+
+      <!-- GRAFIK BATANG PENGELUARAN HARIAN -->
+      <div class="chart-box">
+        <div class="chart-header">
+          <div>
+            <div style="font-weight: 700; font-size: 1.05rem;">Grafik Konsumsi Token & Biaya Harian</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem;">Arahkan kursor ke batang tanggal untuk melihat rincian pemakaian per hari.</div>
+          </div>
+          <div class="chart-controls">
+            <div class="btn-toggle-group">
+              <button class="btn-toggle active" id="btnModeCost" onclick="setChartMetricMode('cost')">Biaya ($ USD)</button>
+              <button class="btn-toggle" id="btnModeTokens" onclick="setChartMetricMode('tokens')">Volume Token</button>
+            </div>
+            <div class="btn-toggle-group">
+              <button class="btn-toggle" id="btnRange7" onclick="setChartRange(7)">7 Hari</button>
+              <button class="btn-toggle active" id="btnRange14" onclick="setChartRange(14)">14 Hari</button>
+              <button class="btn-toggle" id="btnRange30" onclick="setChartRange(30)">30 Hari</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="bar-chart-container" id="barChartContainer">
+          <div style="width: 100%; text-align: center; color: var(--text-muted); padding: 3rem 0;">Memuat data grafik pemakaian...</div>
+        </div>
+      </div>
+
+      <!-- TABEL DETAIL AUDIT LOG -->
+      <h3 style="font-size: 1.05rem; font-weight: 700; margin-bottom: 0.75rem;">Audit Log Transaksi Terakhir</h3>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Waktu & Platform</th>
+              <th>Model AI</th>
+              <th>Total Token</th>
+              <th>Tarif Live Terapan</th>
+              <th>Biaya Dipotong</th>
+              <th>Sumber Saldo</th>
+            </tr>
+          </thead>
+          <tbody id="usageTableBody">
+            <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">Memuat riwayat pemakaian...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- MODAL PEMBAYARAN XENDIT (QRIS / VA) -->
+  <div class="modal-overlay" id="paymentModal">
+    <div class="modal-box">
+      <div class="modal-title" id="modalTitle">Pembayaran Xendit</div>
+      <div class="modal-desc" id="modalDesc">Selesaikan pembayaran melalui QRIS atau Virtual Account resmi.</div>
+      
+      <div class="modal-qr" id="qrContainer">
+        <svg width="180" height="180" viewBox="0 0 100 100">
+          <rect width="100" height="100" fill="white"/>
+          <path d="M10 10h30v30h-30z M15 15v20h20v-20z M20 20h10v10h-10z M60 10h30v30h-30z M65 15v20h20v-20z M70 20h10v10h-10z M10 60h30v30h-30z M15 65v20h20v-20z M20 70h10v10h-10z M45 20h10v10h-10z M45 45h10v10h-10z M20 45h10v10h-10z M65 45h10v10h-10z M45 65h10v10h-10z M60 60h10v10h-10z M75 75h10v10h-10z M60 80h10v10h-10z" fill="#0b1120"/>
+        </svg>
+      </div>
+
+      <div style="font-size: 1.25rem; font-weight: 800; margin-bottom: 0.5rem;" id="modalAmountDisplay">
+        Rp50.000 ($3.20)
+      </div>
+      <div style="font-size: 0.775rem; color: #94a3b8; font-family: monospace; margin-bottom: 1.5rem;" id="modalTxId">
+        TX-ID: -
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 0.6rem;">
+        <a id="btnOpenXenditInvoice" href="#" target="_blank" class="btn btn-outline" style="display: none;">
+          🔗 Buka Halaman Invoice Xendit
+        </a>
+        <button class="btn btn-primary" id="btnConfirmPay" onclick="confirmPaymentSuccess()">
+          ⚡ Konfirmasi Bayar Cepat (Sandbox)
+        </button>
+        <button class="btn btn-outline" onclick="closeModal('paymentModal')">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL BUAT API KEY BARU -->
+  <div class="modal-overlay" id="createKeyModal">
+    <div class="modal-box">
+      <div class="modal-title">Buat Personal API Key Baru</div>
+      <div class="modal-desc">Kunci berawalan <code class="mono">sk_boson_...</code> untuk akses API gateway.</div>
+
+      <div style="text-align: left; margin-bottom: 1rem;">
+        <label style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; display: block; margin-bottom: 0.4rem;">Nama Kunci (Label)</label>
+        <input type="text" id="newKeyName" class="input-field" placeholder="Misal: Cursor IDE / Mac Mini" value="My Developer Key" style="margin-bottom: 1rem;">
+
+        <label style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; display: block; margin-bottom: 0.4rem;">Platform yang Diizinkan</label>
+        <select id="newKeyPlatform" class="input-field" style="margin-bottom: 1rem;">
+          <option value="*">Semua Platform (*)</option>
+          <option value="cursor">Cursor IDE</option>
+          <option value="boson-vscode">VSCode Extension</option>
+          <option value="boson-cli">CLI Terminal</option>
+        </select>
+      </div>
+
+      <div style="display: flex; gap: 0.75rem;">
+        <button class="btn btn-outline" style="flex: 1;" onclick="closeModal('createKeyModal')">Batal</button>
+        <button class="btn btn-primary" style="flex: 1;" id="btnSubmitCreateKey" onclick="submitCreateApiKey()">Buat Kunci</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL TAMPILKAN RAW API KEY BARU -->
+  <div class="modal-overlay" id="showKeySuccessModal">
+    <div class="modal-box" style="max-width: 540px;">
+      <div class="modal-title" style="color: #34d399;">🎉 API Key Berhasil Dibuat!</div>
+      <div class="modal-desc">Simpan kunci ini di tempat aman. Kunci ini <strong>tidak akan ditampilkan lagi</strong> demi keamanan.</div>
+
+      <div class="key-box">
+        <span id="rawKeyDisplay" style="font-size: 0.9rem;">sk_boson_...</span>
+        <button class="btn btn-primary btn-sm" onclick="copyRawKey()">Salin Kunci</button>
+      </div>
+
+      <div class="code-block mono" id="rawKeySnippetDisplay" style="text-align: left;">
+      </div>
+
+      <button class="btn btn-primary" style="width: 100%;" onclick="closeModal('showKeySuccessModal')">Saya Sudah Menyimpan Kunci Ini</button>
+    </div>
+  </div>
+
+  <!-- MODAL LOGIN / MASUK -->
+  <div class="modal-overlay" id="loginModal">
+    <div class="modal-box">
+      <div class="modal-title">Masuk ke Boson Studio</div>
+      <div class="modal-desc">Akses dompet, kelola langganan, dan dapatkan <strong>$2.00 Welcome Bonus</strong>.</div>
+
+      <!-- Google SSO Button -->
+      <button class="btn btn-outline" onclick="loginWithGooglePopup()" style="width: 100%; padding: 0.85rem; margin-bottom: 1.25rem; font-weight: 700; border-color: rgba(56, 189, 248, 0.4); background: rgba(56, 189, 248, 0.05);">
+        <svg width="18" height="18" viewBox="0 0 24 24" style="margin-right: 0.5rem;"><path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"/><path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.7-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.8z"/><path fill="#FBBC05" d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.8s.2-2.1.4-2.8L1.9 6.3C.7 8.7 0 10.3 0 12s.7 3.3 1.9 5.7l3.7-2.9z"/><path fill="#34A853" d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.4-6.4-5.2L1.9 16c1.8 3.7 5.6 7 10.1 7z"/></svg>
+        Lanjutkan dengan Google
+      </button>
+
+      <div style="position: relative; margin-bottom: 1.25rem;">
+        <hr style="border: none; border-top: 1px solid var(--card-border);">
+        <span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #0f172a; padding: 0 0.5rem; font-size: 0.75rem; color: var(--text-muted);">ATAU DENGAN EMAIL</span>
+      </div>
+
+      <!-- Email / Password Form -->
+      <div style="text-align: left; margin-bottom: 1rem;">
+        <input type="email" id="loginEmail" class="input-field" placeholder="Email Anda" style="margin-bottom: 0.75rem;">
+        <input type="password" id="loginPassword" class="input-field" placeholder="Kata Sandi" style="margin-bottom: 1rem;">
+        <div id="loginErrorMsg" style="color: #ef4444; font-size: 0.8rem; margin-bottom: 0.75rem; display: none;"></div>
+      </div>
+
+      <div style="display: flex; gap: 0.75rem;">
+        <button class="btn btn-outline" style="flex: 1;" onclick="closeModal('loginModal')">Batal</button>
+        <button class="btn btn-primary" style="flex: 1;" id="btnSubmitLogin" onclick="submitEmailLogin()">Masuk</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentAuthToken = localStorage.getItem('boson_auth_token') || '';
+    let selectedGatewayType = 'qris';
+    let currentPendingTxId = '';
+    let activeWalletTotal = 0;
+    let selectedPresetAmount = 3.20;
+
+    // Baca token jika ada di query string ?token=...
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('token')) {
+      currentAuthToken = urlParams.get('token');
+      localStorage.setItem('boson_auth_token', currentAuthToken);
+    }
+
+    // Listener PostMessage dari Google OAuth Popup
+    window.addEventListener('message', (event) => {
+      if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
+        const payload = event.data.payload || {};
+        if (payload.token) {
+          currentAuthToken = payload.token;
+          localStorage.setItem('boson_auth_token', currentAuthToken);
+          closeModal('loginModal');
+          fetchUserData();
+          loadApiKeys();
+          loadUsageHistory();
+        }
+      }
+    });
+
+    function switchTab(tabId, el) {
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      const target = document.getElementById(tabId);
+      if (target) target.classList.add('active');
+      if (el) el.classList.add('active');
+    }
+
+    function openModal(id) { document.getElementById(id).classList.add('active'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+    function openLoginModal() { openModal('loginModal'); }
+
+    function loginWithGooglePopup() {
+      const w = 500, h = 600;
+      const left = (window.screen.width / 2) - (w / 2);
+      const top = (window.screen.height / 2) - (h / 2);
+      window.open('/v1/auth/google/popup', 'GoogleLogin', \`width=\${w},height=\${h},top=\${top},left=\${left}\`);
+    }
+
+    async function submitEmailLogin() {
+      const email = document.getElementById('loginEmail').value.trim();
+      const password = document.getElementById('loginPassword').value;
+      const errBox = document.getElementById('loginErrorMsg');
+      const btn = document.getElementById('btnSubmitLogin');
+
+      if (!email || !password) {
+        errBox.textContent = 'Harap isi email dan kata sandi.';
+        errBox.style.display = 'block';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Memproses...';
+      errBox.style.display = 'none';
+
+      try {
+        // Coba login via submit-login
+        const resp = await fetch('/api/v0/auth/submit-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, auth_id: 'portal_login' })
+        });
+        const data = await resp.json();
+
+        if (resp.ok && data.token) {
+          currentAuthToken = data.token;
+          localStorage.setItem('boson_auth_token', currentAuthToken);
+          closeModal('loginModal');
+          fetchUserData();
+          loadApiKeys();
+          loadUsageHistory();
+        } else {
+          errBox.textContent = data.msg || 'Email atau kata sandi tidak cocok.';
+          errBox.style.display = 'block';
+        }
+      } catch (err) {
+        errBox.textContent = 'Gagal menghubungi server: ' + err.message;
+        errBox.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Masuk';
+      }
+    }
+
+    function logoutUser() {
+      localStorage.removeItem('boson_auth_token');
+      currentAuthToken = '';
+      window.location.reload();
+    }
+
+    async function fetchUserData() {
+      if (!currentAuthToken) {
+        document.getElementById('userHeaderArea').innerHTML = \`
+          <button class="btn btn-primary btn-sm" onclick="openLoginModal()">Masuk / Login</button>
+        \`;
+        return;
+      }
+
+      try {
+        const headers = {
+          'x-dsh-auth-token': currentAuthToken,
+          'Authorization': 'Bearer ' + currentAuthToken
+        };
+        const resp = await fetch('/api/v0/users/get_user_summary', { headers });
+        if (resp.ok) {
+          const res = await resp.json();
+          const data = res.data?.biz_data || {};
+          renderWallet(data);
+          loadUserMaxBudget();
+        } else {
+          // Token expired
+          localStorage.removeItem('boson_auth_token');
+          currentAuthToken = '';
+        }
+      } catch (err) {
+        console.warn('Gagal memuat profil user:', err);
+      }
+    }
+
+    function renderWallet(data) {
+      const deposit = parseFloat(data.deposit_balance || 0);
+      const subs = parseFloat(data.subscription_balance || 0);
+      const bonus = parseFloat(data.bonus_wallets?.[0]?.balance || 0);
+      const total = deposit + subs + bonus;
+      activeWalletTotal = total;
+
+      document.getElementById('totalBalanceVal').textContent = '$' + total.toFixed(2);
+      document.getElementById('normalBalanceVal').textContent = '$' + deposit.toFixed(2);
+      document.getElementById('subsBalanceVal').textContent = '$' + subs.toFixed(2);
+      document.getElementById('bonusBalanceVal').textContent = '$' + bonus.toFixed(2);
+
+      updateLowBalanceBanner(total);
+
+      const email = data.profile?.email || 'User Boson';
+      const tier = (data.profile?.tier || 'free').toUpperCase();
+      document.getElementById('tierTag').textContent = tier + ' TIER';
+
+      document.getElementById('userHeaderArea').innerHTML = \`
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+          <div style="width: 28px; height: 28px; border-radius: 50%; background: #38bdf8; color: #0b1120; font-weight: 800; display: flex; align-items: center; justify-content: center; font-size: 0.75rem;">
+            \${email[0].toUpperCase()}
+          </div>
+          <span style="font-size: 0.85rem; font-weight: 600; color: #e2e8f0;">\${email}</span>
+          <button class="btn btn-outline btn-sm" onclick="logoutUser()" title="Keluar">Keluar</button>
+        </div>
+      \`;
+    }
+
+    function updateLowBalanceBanner(total) {
+      const banner = document.getElementById('lowBalanceBanner');
+      if (!banner) return;
+      if (!currentAuthToken) {
+        banner.style.display = 'none';
+        return;
+      }
+      const icon = document.getElementById('lowBalanceIcon');
+      const title = document.getElementById('lowBalanceTitle');
+      const desc = document.getElementById('lowBalanceDesc');
+
+      if (total <= 0) {
+        banner.className = 'low-balance-alert critical';
+        icon.textContent = '⛔';
+        title.textContent = 'Saldo AI Anda Telah Habis ($0.00)';
+        title.style.color = '#ef4444';
+        desc.innerHTML = 'Sesi coding AI dan inferensi streaming terhenti karena saldo habis. Silakan lakukan top-up saldo untuk melanjutkan sesi.';
+        banner.style.display = 'flex';
+      } else if (total < 0.20) {
+        banner.className = 'low-balance-alert';
+        icon.textContent = '⚠️';
+        title.textContent = 'Peringatan: Saldo AI Anda Menipis (< $0.20)';
+        title.style.color = '#fbbf24';
+        desc.innerHTML = 'Sisa saldo kredit AI Anda tersisa <strong style="color: #fff;">$' + total.toFixed(2) + '</strong>. Segera lakukan pengisian saldo agar sesi inferensi coding tidak terhenti di tengah jalan.';
+        banner.style.display = 'flex';
+      } else {
+        banner.style.display = 'none';
+      }
+    }
+
+    function goToTopUpTab() {
+      const topUpBtn = document.querySelectorAll('.tab-btn')[2];
+      switchTab('tab-deposit', topUpBtn);
+    }
+
+    // Top-Up & Presets
+    function selectPreset(usd, idr, el) {
+      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+      if (el) el.classList.add('active');
+      selectedPresetAmount = usd;
+      document.getElementById('customAmount').value = usd.toFixed(2);
+    }
+
+    function clearPresets() {
+      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+      selectedPresetAmount = parseFloat(document.getElementById('customAmount').value) || 0;
+    }
+
+    function selectGateway(gw, el) {
+      document.querySelectorAll('.gateway-option').forEach(o => o.classList.remove('selected'));
+      if (el) el.classList.add('selected');
+      selectedGatewayType = gw;
+    }
+
+    async function submitDeposit() {
+      if (!currentAuthToken) {
+        openLoginModal();
+        return;
+      }
+
+      const amountUsd = parseFloat(document.getElementById('customAmount').value);
+      if (!amountUsd || amountUsd < 1.5) {
+        alert('Minimal nominal top-up adalah $1.50 (Rp25.000)');
+        return;
+      }
+
+      const btn = document.getElementById('btnDeposit');
+      btn.disabled = true;
+      btn.textContent = 'Menghubungi Xendit...';
+
+      try {
+        const resp = await fetch('/api/v0/billing/create-deposit', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-dsh-auth-token': currentAuthToken,
+            'Authorization': 'Bearer ' + currentAuthToken
+          },
+          body: JSON.stringify({ amount_usd: amountUsd, gateway: 'xendit' })
+        });
+        const data = await resp.json();
+
+        currentPendingTxId = data.transaction_id || data.invoice_id;
+        const amountIdr = data.amount_idr || Math.round(amountUsd * 16500);
+        const idrFormatted = 'Rp' + Number(amountIdr).toLocaleString('id-ID');
+
+        document.getElementById('modalTitle').textContent = 'Top-Up Deposit Bebas';
+        document.getElementById('modalAmountDisplay').textContent = idrFormatted + ' ($' + amountUsd.toFixed(2) + ')';
+        document.getElementById('modalTxId').textContent = 'INVOICE: ' + currentPendingTxId;
+        document.getElementById('modalDesc').textContent = 'Pindai QRIS atau bayar via Virtual Account resmi Xendit.';
+
+        const invoiceUrl = data.invoice_url || data.checkout_url;
+        const btnLink = document.getElementById('btnOpenXenditInvoice');
+        if (invoiceUrl) {
+          btnLink.href = invoiceUrl;
+          btnLink.style.display = 'inline-flex';
+        } else {
+          btnLink.style.display = 'none';
+        }
+
+        openModal('paymentModal');
+      } catch (err) {
+        alert('Gagal membuat invoice Xendit: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Lanjutkan Pembayaran Top-Up';
+      }
+    }
+
+    async function loadUserMaxBudget() {
+      if (!currentAuthToken) return;
+      try {
+        const resp = await fetch('/api/v0/wallet/max-budget', {
+          headers: {
+            'x-dsh-auth-token': currentAuthToken,
+            'Authorization': 'Bearer ' + currentAuthToken
+          }
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          const inp = document.getElementById('inputUserMaxBudget');
+          if (inp && data.custom_max_budget !== null && data.custom_max_budget !== undefined) {
+            inp.value = Number(data.custom_max_budget).toFixed(2);
+          }
+        }
+      } catch {}
+    }
+
+    async function saveUserMaxBudget() {
+      if (!currentAuthToken) {
+        openLoginModal();
+        return;
+      }
+      const val = document.getElementById('inputUserMaxBudget').value.trim();
+      const budget = val ? parseFloat(val) : null;
+      if (budget !== null && (isNaN(budget) || budget <= 0)) {
+        alert('Masukkan angka batas budget yang valid (contoh: 50.00)');
+        return;
+      }
+      const btn = document.getElementById('btnSaveMaxBudget');
+      btn.disabled = true;
+      btn.textContent = 'Menyimpan...';
+
+      try {
+        const resp = await fetch('/api/v0/wallet/max-budget', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-dsh-auth-token': currentAuthToken,
+            'Authorization': 'Bearer ' + currentAuthToken
+          },
+          body: JSON.stringify({ max_budget: budget })
+        });
+        const data = await resp.json();
+        const msg = document.getElementById('maxBudgetStatusMsg');
+        msg.textContent = '✓ ' + (data.message || 'Batas budget berhasil disimpan!');
+        msg.style.display = 'block';
+        setTimeout(() => { msg.style.display = 'none'; }, 4000);
+      } catch (err) {
+        alert('Gagal menyimpan batas budget: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Simpan Batas Budget';
+      }
+    }
+
+    async function resetUserMaxBudget() {
+      if (!currentAuthToken) return;
+      document.getElementById('inputUserMaxBudget').value = '';
+      await saveUserMaxBudget();
+    }
+
+    async function subscribePlan(tier) {
+      if (!currentAuthToken) {
+        openLoginModal();
+        return;
+      }
+
+      try {
+        const resp = await fetch('/api/v0/billing/subscribe', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-dsh-auth-token': currentAuthToken,
+            'Authorization': 'Bearer ' + currentAuthToken
+          },
+          body: JSON.stringify({ plan_tier: tier, gateway: 'xendit' })
+        });
+        const data = await resp.json();
+        currentPendingTxId = data.transaction_id || data.invoice_id;
+
+        const amount = data.amount_usd || 14.99;
+        const amountIdr = data.amount_idr || Math.round(amount * 16500);
+        const idrFormatted = 'Rp' + Number(amountIdr).toLocaleString('id-ID');
+
+        document.getElementById('modalTitle').textContent = 'Langganan Paket ' + tier.toUpperCase();
+        document.getElementById('modalAmountDisplay').textContent = idrFormatted + ' ($' + amount.toFixed(2) + '/bln)';
+        document.getElementById('modalTxId').textContent = 'INVOICE: ' + currentPendingTxId;
+        document.getElementById('modalDesc').textContent = 'Selesaikan pembayaran untuk mengaktifkan kuota token bulanan ($18.00).';
+
+        const invoiceUrl = data.invoice_url || data.checkout_url;
+        const btnLink = document.getElementById('btnOpenXenditInvoice');
+        if (invoiceUrl) {
+          btnLink.href = invoiceUrl;
+          btnLink.style.display = 'inline-flex';
+        } else {
+          btnLink.style.display = 'none';
+        }
+
+        openModal('paymentModal');
+      } catch (err) {
+        alert('Gagal memproses langganan: ' + err.message);
+      }
+    }
+
+    async function confirmPaymentSuccess() {
+      const btn = document.getElementById('btnConfirmPay');
+      btn.disabled = true;
+      btn.textContent = 'Memverifikasi Settlement...';
+
+      try {
+        // Simulasi webhook settlement Xendit
+        const resp = await fetch('/v1/xendit/webhook', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-callback-token': 'HDmeJZjzpTJkJ1t2YmHiTOohL4lblqJbZQblm7SvOzzHO5Ar'
+          },
+          body: JSON.stringify({
+            id: 'inv_pay_' + Date.now(),
+            external_id: currentPendingTxId,
+            status: 'PAID',
+            payment_method: 'QRIS',
+            paid_at: new Date().toISOString()
+          })
+        });
+        await resp.json();
+
+        closeModal('paymentModal');
+        alert('✨ Pembayaran Berhasil Terverifikasi! Saldo & Kuota Anda telah diperbarui.');
+        await fetchUserData();
+        await loadLivePricing();
+        await loadUsageHistory();
+      } catch (err) {
+        alert('Gagal verifikasi pembayaran: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '⚡ Konfirmasi Bayar Cepat (Sandbox)';
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // PERSONAL API KEY MANAGEMENT
+    // ─────────────────────────────────────────────────────────────
+    async function loadApiKeys() {
+      if (!currentAuthToken) return;
+      try {
+        const resp = await fetch('/api/v0/api-keys', {
+          headers: { 'Authorization': 'Bearer ' + currentAuthToken }
+        });
+        if (!resp.ok) return;
+        const { keys } = await resp.json();
+        const tbody = document.getElementById('apiKeysTableBody');
+        if (!keys || keys.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">Belum ada API Key dibuat. Buat satu untuk Cursor / CLI!</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = '';
+        for (const k of keys) {
+          const tr = document.createElement('tr');
+          const timeCreated = new Date(k.created_at).toLocaleDateString('id-ID');
+          const timeUsed = k.last_used_at ? new Date(k.last_used_at).toLocaleString('id-ID') : 'Belum pernah';
+          const platforms = (k.allowed_platforms || ['*']).join(', ');
+
+          tr.innerHTML = \`
+            <td><strong>\${k.key_name || 'Personal Key'}</strong></td>
+            <td><code class="mono" style="color: #38bdf8;">\${k.key_prefix}...</code></td>
+            <td><span class="tag tag-blue">\${platforms}</span></td>
+            <td><span style="font-size: 0.8rem; color: #94a3b8;">\${timeUsed}</span></td>
+            <td><span style="font-size: 0.8rem; color: #64748b;">\${timeCreated}</span></td>
+            <td>
+              <button class="btn btn-danger btn-sm" onclick="revokeApiKey('\${k.id}')">Cabut</button>
+            </td>
+          \`;
+          tbody.appendChild(tr);
+        }
+      } catch (err) {
+        console.error('Gagal memuat API keys:', err);
+      }
+    }
+
+    function openCreateKeyModal() {
+      if (!currentAuthToken) { openLoginModal(); return; }
+      openModal('createKeyModal');
+    }
+
+    async function submitCreateApiKey() {
+      const keyName = document.getElementById('newKeyName').value.trim() || 'My Key';
+      const platform = document.getElementById('newKeyPlatform').value;
+      const allowed = platform === '*' ? ['*'] : [platform];
+
+      const btn = document.getElementById('btnSubmitCreateKey');
+      btn.disabled = true;
+      btn.textContent = 'Membuat...';
+
+      try {
+        const resp = await fetch('/api/v0/api-keys', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + currentAuthToken
+          },
+          body: JSON.stringify({ key_name: keyName, allowed_platforms: allowed })
+        });
+        const data = await resp.json();
+        closeModal('createKeyModal');
+
+        const rawKey = data.api_key || data.apiKey;
+        document.getElementById('rawKeyDisplay').textContent = rawKey;
+        document.getElementById('rawKeySnippetDisplay').innerHTML = \`
+# Setup Cepat di Terminal:<br>
+export ANTHROPIC_BASE_URL="http://127.0.0.1:8088/v1"<br>
+export ANTHROPIC_API_KEY="\${rawKey}"
+        \`;
+
+        openModal('showKeySuccessModal');
+        loadApiKeys();
+      } catch (err) {
+        alert('Gagal membuat API key: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Buat Kunci';
+      }
+    }
+
+    function copyRawKey() {
+      const key = document.getElementById('rawKeyDisplay').textContent;
+      navigator.clipboard.writeText(key).then(() => {
+        alert('📋 API Key berhasil disalin ke clipboard!');
+      });
+    }
+
+    async function revokeApiKey(keyId) {
+      if (!confirm('Yakin ingin mencabut API Key ini? Akses dari editor atau CLI yang memakai key ini akan ditolak.')) return;
+      try {
+        const resp = await fetch('/api/v0/api-keys/' + keyId, {
+          method: 'DELETE',
+          headers: { 'Authorization': 'Bearer ' + currentAuthToken }
+        });
+        await resp.json();
+        loadApiKeys();
+      } catch (err) {
+        alert('Gagal mencabut API key: ' + err.message);
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // LIVE PRICING & USAGE HISTORY
+    // ─────────────────────────────────────────────────────────────
+    async function loadLivePricing() {
+      try {
+        const resp = await fetch('/api/v0/pricing/live');
+        const data = await resp.json();
+        const tbody = document.getElementById('pricingTableBody');
+        tbody.innerHTML = '';
+
+        if (data.meta) {
+          const badge = document.getElementById('syncBadge');
+          if (badge) {
+            badge.textContent = '● ' + (data.meta.provider || 'Live Upstream') + ' (Synced)';
+          }
+        }
+
+        const pricing = data.pricing || {};
+        for (const [key, item] of Object.entries(pricing)) {
+          if (key === 'default') continue;
+          const tr = document.createElement('tr');
+          const avgRate = (item.prompt + item.completion) / 2;
+          const tokenReach = activeWalletTotal > 0 && avgRate > 0
+            ? Math.floor((activeWalletTotal / avgRate) * 1000000).toLocaleString() + ' token'
+            : (activeWalletTotal <= 0 ? 'Perlu Top-Up' : '-');
+
+          const wpIdr = item.wholesale_prompt_idr_per_1k || ((item.wholesale_prompt || 0) / 1000 * 16500).toFixed(2);
+          const wcIdr = item.wholesale_completion_idr_per_1k || ((item.wholesale_completion || 0) / 1000 * 16500).toFixed(2);
+          const pIdr = item.prompt_idr_per_1k || ((item.prompt || 0) / 1000 * 16500).toFixed(2);
+          const cIdr = item.completion_idr_per_1k || ((item.completion || 0) / 1000 * 16500).toFixed(2);
+
+          tr.innerHTML = \`
+            <td>
+              <strong style="font-size: 0.925rem;">\${item.name || key}</strong><br>
+              <span class="provider-pill">\${item.provider || 'Upstream LLM'}</span>
+              <span style="font-size: 0.725rem; color: #64748b; margin-left: 0.35rem;">\${key}</span>
+            </td>
+            <td>
+              <div class="mono" style="font-size: 0.85rem;">$\${Number(item.wholesale_prompt || 0).toFixed(4)} <span style="font-size: 0.725rem; color: #64748b;">in</span> / $\${Number(item.wholesale_completion || 0).toFixed(4)} <span style="font-size: 0.725rem; color: #64748b;">out</span></div>
+              <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 0.15rem;">
+                Rp\${Number(wpIdr).toLocaleString('id-ID')} in / Rp\${Number(wcIdr).toLocaleString('id-ID')} out <span style="color:#64748b; font-size: 0.7rem;">/1k tok</span>
+              </div>
+            </td>
+            <td>
+              <span class="tag tag-blue" style="font-size: 0.775rem; font-weight: 700;">+\${item.margin_percent || 15}%</span>
+              <div style="font-size: 0.7rem; color: #64748b; margin-top: 0.25rem;">GW 1% + Kurs 2.5% + Svr 1.5% + Net 10%</div>
+            </td>
+            <td>
+              <div class="mono" style="font-size: 0.9rem; font-weight: 700; color: #38bdf8;">
+                $\${Number(item.prompt || 0).toFixed(4)} <span style="font-size: 0.725rem; color: #94a3b8;">in</span> / $\${Number(item.completion || 0).toFixed(4)} <span style="font-size: 0.725rem; color: #94a3b8;">out</span>
+              </div>
+              <div style="color: #34d399; font-weight: 700; font-size: 0.8rem; margin-top: 0.15rem;">
+                Rp\${Number(pIdr).toLocaleString('id-ID')} in / Rp\${Number(cIdr).toLocaleString('id-ID')} out <span style="font-size: 0.7rem; color: #94a3b8; font-weight: normal;">/ 1.000 tok</span>
+              </div>
+            </td>
+            <td>
+              <div style="color: #10b981; font-weight: 700; font-size: 0.9rem;">\${tokenReach}</div>
+              <div style="font-size: 0.725rem; color: #64748b;">daya jangkau saldo</div>
+            </td>
+          \`;
+          tbody.appendChild(tr);
+        }
+      } catch (err) {
+        console.error('Gagal memuat pricing:', err);
+      }
+    }
+
+    async function loadUsageHistory() {
+      if (!currentAuthToken) {
+        document.getElementById('usageTableBody').innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">Silakan masuk untuk melihat riwayat pemakaian token Anda.</td></tr>';
+        return;
+      }
+
+      try {
+        const resp = await fetch('/api/v0/billing/usage-history', {
+          headers: { 'Authorization': 'Bearer ' + currentAuthToken }
+        });
+        if (!resp.ok) return;
+        const { logs } = await resp.json();
+        const tbody = document.getElementById('usageTableBody');
+        if (!logs || logs.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">Belum ada riwayat transaksi pemakaian token.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = '';
+        for (const log of logs) {
+          const tr = document.createElement('tr');
+          const timeStr = new Date(log.created_at).toLocaleString('id-ID');
+          const meta = log.metadata || {};
+          const rateStr = meta.rate_prompt_per_1m 
+            ? '$' + Number(meta.rate_prompt_per_1m).toFixed(3) + ' in / $' + Number(meta.rate_completion_per_1m).toFixed(3) + ' out'
+            : 'Live Pricing';
+
+          const badgeClass = log.deducted_from === 'bonus' ? 'tag-blue' : (log.deducted_from === 'subscription' ? 'tag-purple' : 'tag-green');
+
+          tr.innerHTML = \`
+            <td><strong style="font-size: 0.85rem;">\${timeStr}</strong><br><span style="font-size: 0.75rem; color: #64748b;">\${log.platform_id || 'boson-studio'}</span></td>
+            <td><strong>\${log.model}</strong></td>
+            <td><span class="mono">\${Number(log.total_tokens || 0).toLocaleString()}</span> <span style="font-size: 0.75rem; color: #64748b;">(\${log.prompt_tokens} in / \${log.completion_tokens} out)</span></td>
+            <td><span class="mono" style="font-size: 0.8rem; color: #94a3b8;">\${rateStr}</span></td>
+            <td><strong style="color: #ef4444;" class="mono">-$\${Number(log.cost_usd || 0).toFixed(6)}</strong></td>
+            <td><span class="tag \${badgeClass}">\${(log.deducted_from || 'normal').toUpperCase()}</span></td>
+          \`;
+          tbody.appendChild(tr);
+        }
+      } catch (err) {
+        console.error('Gagal memuat usage history:', err);
+      }
+    }
+
+    // VISUAL DAILY USAGE & TOKEN CONSUMPTION CHART
+    let currentChartDays = 14;
+    let currentChartMode = 'cost'; // 'cost' or 'tokens'
+    let cachedDailyUsage = null;
+
+    async function loadDailyUsageChart(days) {
+      if (typeof days === 'number') currentChartDays = days;
+      if (!currentAuthToken) {
+        renderEmptyChart('Silakan masuk untuk melihat grafik konsumsi token harian.');
+        return;
+      }
+      try {
+        const resp = await fetch(\`/api/v0/billing/daily-usage?days=\${currentChartDays}\`, {
+          headers: { 'Authorization': 'Bearer ' + currentAuthToken }
+        });
+        if (!resp.ok) {
+          renderEmptyChart('Gagal memuat data grafik harian.');
+          return;
+        }
+        const data = await resp.json();
+        cachedDailyUsage = data;
+
+        // Render Summary Metrics
+        const totalCost = Number(data.total_cost_usd || 0);
+        const totalTokens = Number(data.total_tokens || 0);
+        const totalTurns = Number(data.total_turns || 0);
+        const avgCost = totalTurns > 0 ? (totalCost / totalTurns) : 0;
+
+        document.getElementById('metricTotalCost').textContent = '$' + totalCost.toFixed(6);
+        document.getElementById('metricCostSub').textContent = \`Total pemakaian \${currentChartDays} hari terakhir\`;
+        document.getElementById('metricTotalTokens').textContent = totalTokens.toLocaleString() + ' Tokens';
+        document.getElementById('metricTokenSub').textContent = \`\${currentChartDays} hari terakhir\`;
+        document.getElementById('metricTotalTurns').textContent = totalTurns.toLocaleString() + ' Turns';
+        document.getElementById('metricAvgCost').textContent = '$' + avgCost.toFixed(6);
+
+        renderDailyUsageChart();
+      } catch (err) {
+        console.error('Gagal load daily usage chart:', err);
+        renderEmptyChart('Terjadi kesalahan saat memuat grafik pemakaian.');
+      }
+    }
+
+    function renderEmptyChart(msg) {
+      const container = document.getElementById('barChartContainer');
+      if (container) {
+        container.innerHTML = \`<div style="width: 100%; text-align: center; color: var(--text-muted); padding: 3rem 0; font-size: 0.85rem;">\${msg}</div>\`;
+      }
+    }
+
+    function renderDailyUsageChart() {
+      const container = document.getElementById('barChartContainer');
+      if (!container || !cachedDailyUsage || !cachedDailyUsage.series) {
+        renderEmptyChart('Belum ada data pemakaian harian.');
+        return;
+      }
+
+      const series = cachedDailyUsage.series;
+      if (series.length === 0) {
+        renderEmptyChart('Tidak ada aktivitas token pada rentang waktu ini.');
+        return;
+      }
+
+      const values = series.map(d => currentChartMode === 'cost' ? Number(d.cost_usd || 0) : Number(d.total_tokens || 0));
+      const maxVal = Math.max(...values, currentChartMode === 'cost' ? 0.001 : 100);
+
+      container.innerHTML = '';
+      series.forEach(item => {
+        const rawVal = currentChartMode === 'cost' ? Number(item.cost_usd || 0) : Number(item.total_tokens || 0);
+        const heightPct = Math.min(100, Math.max((rawVal / maxVal) * 92, rawVal > 0 ? 10 : 3));
+
+        const dateObj = new Date(item.date + 'T00:00:00');
+        const dayLabel = dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+
+        const barCol = document.createElement('div');
+        barCol.className = 'bar-col';
+
+        const modelsList = item.models && item.models.length > 0 ? item.models.join(', ') : 'Belum ada model';
+
+        barCol.innerHTML = \`
+          <div class="bar-tooltip">
+            <div style="font-weight: 700; color: #38bdf8; margin-bottom: 2px;">\${item.date}</div>
+            <div>Biaya: <strong style="color: #fff;">$\${Number(item.cost_usd || 0).toFixed(6)}</strong></div>
+            <div>Token: <strong style="color: #fff;">\${Number(item.total_tokens || 0).toLocaleString()}</strong> (\${Number(item.prompt_tokens || 0).toLocaleString()} in / \${Number(item.completion_tokens || 0).toLocaleString()} out)</div>
+            <div>Frekuensi: <strong style="color: #fff;">\${item.turn_count || 0} turn</strong></div>
+            <div style="color: #94a3b8; font-size: 0.7rem; margin-top: 3px;">Model: \${modelsList}</div>
+          </div>
+          <div class="bar-fill" style="height: \${heightPct}%; background: \${rawVal > 0 ? 'linear-gradient(180deg, #38bdf8, #6366f1)' : 'rgba(255,255,255,0.06)'};"></div>
+          <div class="bar-label">\${dayLabel}</div>
+        \`;
+        container.appendChild(barCol);
+      });
+    }
+
+    function setChartMetricMode(mode) {
+      currentChartMode = mode;
+      document.getElementById('btnModeCost')?.classList.toggle('active', mode === 'cost');
+      document.getElementById('btnModeTokens')?.classList.toggle('active', mode === 'tokens');
+      renderDailyUsageChart();
+    }
+
+    function setChartRange(days) {
+      document.getElementById('btnRange7')?.classList.toggle('active', days === 7);
+      document.getElementById('btnRange14')?.classList.toggle('active', days === 14);
+      document.getElementById('btnRange30')?.classList.toggle('active', days === 30);
+      loadDailyUsageChart(days);
+    }
+
+    function refreshUsageSection() {
+      loadDailyUsageChart(currentChartDays);
+      loadUsageHistory();
+    }
+
+    // Inisialisasi saat halaman dibuka
+    fetchUserData().then(() => {
+      loadLivePricing();
+      loadApiKeys();
+      loadUsageHistory();
+      loadDailyUsageChart(14);
+    });
+  </script>
+</body>
+</html>`;
+}

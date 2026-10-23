@@ -53,7 +53,7 @@ function mountShell({ collapsed = false, width = 300, shortcuts = [] }: {
       collapsed={current.collapsed} width={current.width}
       useSessions={neverHook} useSessionStatus={useSessionStatus} useSessionRetainInfo={neverHook}
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])} useShortcuts={selector => selector(shortcuts)}
-      useResource={useResource} useWorkspaces={neverHook}
+      useResource={useResource} useWorkspaces={neverHook} useActiveView={neverHook} useCurrentSessionId={neverHook}
       {...allowAllAccess}
       startSession={startSession} toggleSidebar={toggleSidebar} t={t}
       renderSlot={((
@@ -115,7 +115,7 @@ describe('SidebarRoot shell', () => {
     cleanup()
     render(<HeaderLeadingControls toggleSidebar={vi.fn()} startSession={vi.fn()} selectPanel={vi.fn()} t={t}
       usePanelInfo={neverHook} useSessions={neverHook} useSessionStatus={neverHook}
-      useSessionRetainInfo={neverHook} useResource={useResource} useWorkspaces={neverHook}
+      useSessionRetainInfo={neverHook} useResource={useResource} useWorkspaces={neverHook} useActiveView={neverHook} useCurrentSessionId={neverHook}
       {...allowAllAccess}
       usePanels={select => select([])} useShortcuts={select => select([shortcut])} />)
     const button = screen.getByRole('button', { name: 'New session' })
@@ -144,7 +144,7 @@ describe('SidebarRoot shell', () => {
       collapsed={false} width={300}
       useSessions={neverHook} useSessionStatus={useSessionStatus} useSessionRetainInfo={neverHook}
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])} useShortcuts={selector => selector([])}
-      useResource={useResource} useWorkspaces={neverHook}
+      useResource={useResource} useWorkspaces={neverHook} useActiveView={neverHook} useCurrentSessionId={neverHook}
       {...allowAllAccess}
       startSession={vi.fn()} toggleSidebar={vi.fn()} t={t}
       renderSlot={((_key: string, _owner: unknown, options?: { fallback?: ReactNode }) =>
@@ -165,7 +165,7 @@ describe('SidebarRoot shell', () => {
       collapsed={false} width={300}
       useSessions={neverHook} useSessionStatus={useSessionStatus} useSessionRetainInfo={neverHook}
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])} useShortcuts={selector => selector([])}
-      useResource={useResource} useWorkspaces={neverHook}
+      useResource={useResource} useWorkspaces={neverHook} useActiveView={neverHook} useCurrentSessionId={neverHook}
       {...allowAllAccess}
       startSession={vi.fn()} toggleSidebar={vi.fn()} t={t}
       renderSlot={((_key: string, _owner: unknown, options?: { fallback?: ReactNode }) =>
@@ -181,7 +181,7 @@ describe('SidebarRoot shell', () => {
       collapsed={false} width={300}
       useSessions={neverHook} useSessionStatus={useSessionStatus} useSessionRetainInfo={neverHook}
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])} useShortcuts={selector => selector([])}
-      useResource={useResource} useWorkspaces={neverHook}
+      useResource={useResource} useWorkspaces={neverHook} useActiveView={neverHook} useCurrentSessionId={neverHook}
       {...allowAllAccess}
       startSession={vi.fn()} toggleSidebar={vi.fn()} t={t}
       renderSlot={((_key: string, _owner: unknown, options?: { fallback?: ReactNode }) =>
@@ -229,7 +229,7 @@ describe('SidebarRoot shell', () => {
       collapsed width={56}
       useSessions={neverHook} useSessionStatus={useSessionStatus} useSessionRetainInfo={neverHook}
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])} useShortcuts={selector => selector([])}
-      useResource={useResource} useWorkspaces={neverHook}
+      useResource={useResource} useWorkspaces={neverHook} useActiveView={neverHook} useCurrentSessionId={neverHook}
       {...allowAllAccess}
       startSession={vi.fn()} toggleSidebar={vi.fn()} t={t}
       renderSlot={((key: string) => key === 'sidebar.toggle.badge'

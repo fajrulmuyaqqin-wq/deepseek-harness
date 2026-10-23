@@ -48,6 +48,17 @@ const ANTHROPIC_VERSION = '2023-06-01'
 /** Largest model-list page accepted by Anthropic's public endpoint; discovery reads one page and does not follow `has_more`. */
 const ANTHROPIC_MODEL_LIMIT = 1000
 
+/** Default models advertised by Boson Gateway if offline or unprobed. */
+export const BOSON_FALLBACK_MODELS: readonly LlmDiscoveredModel[] = [
+  { id: 'deepseek-chat', name: 'DeepSeek V3 (Chat)', contextWindow: 64000, maxTokens: 8192, inputModalities: ['text'] },
+  { id: 'deepseek-flash', name: 'DeepSeek V4.1 Flash', contextWindow: 1000000, maxTokens: 256000, inputModalities: ['text', 'image'] },
+  { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', contextWindow: 1000000, maxTokens: 256000, inputModalities: ['text'] },
+  { id: 'deepseek-reasoner', name: 'DeepSeek R1 (Reasoning)', contextWindow: 64000, maxTokens: 8192, inputModalities: ['text'] },
+  { id: 'claude-3-5-sonnet', name: 'Claude 3.5 Sonnet', contextWindow: 200000, maxTokens: 8192, inputModalities: ['text', 'image'] },
+  { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, maxTokens: 4096, inputModalities: ['text', 'image'] },
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', contextWindow: 1000000, maxTokens: 8192, inputModalities: ['text', 'image'] },
+]
+
 /**
  * Endpoint replies larger than this are refused. The endpoint is whatever URL
  * the user typed, so the ceiling holds on the bytes actually read rather than
@@ -284,7 +295,8 @@ export async function discoverModels(
       }))
     }
   }
-  if (request.baseURL === undefined || request.baseURL.length === 0) {
+  const effectiveBaseURL = request.baseURL ?? (request.provider === 'boson' ? (process.env.DEEPSEEK_BASE_URL || 'http://127.0.0.1:8088') : undefined)
+  if (effectiveBaseURL === undefined || effectiveBaseURL.length === 0) {
     throw new LlmError(
       `pi-ai ships no catalog for provider "${request.provider ?? ''}", so its models can only come from its`
       + " endpoint; set a baseURL, or enter this provider's models by hand",
@@ -304,7 +316,7 @@ export async function discoverModels(
       'DISCOVERY_UNSUPPORTED',
     )
   }
-  const url = listingUrl(request.baseURL, api)
+  const url = listingUrl(effectiveBaseURL, api)
   // A key typed into the form wins: it may replace the stored key that is
   // failing. The stored profile is asked past the catalog and protocol checks,
   // and its credential resolver remains lazy so a typed key cannot fail over a
@@ -333,9 +345,15 @@ export async function discoverModels(
     if (request.signal?.aborted) {
       throw new LlmError('model discovery aborted by caller', 'ABORTED', { cause: error })
     }
+    if (request.provider === 'boson') {
+      return [...BOSON_FALLBACK_MODELS]
+    }
     throw new LlmError(`could not reach ${url}`, 'DISCOVERY_FAILED', { cause: error })
   }
   if (!response.ok) {
+    if (request.provider === 'boson') {
+      return [...BOSON_FALLBACK_MODELS]
+    }
     throw new LlmError(
       `${url} answered ${response.status}${response.status === 401 || response.status === 403 ? '; check the API key' : ''}`,
       'DISCOVERY_FAILED',
