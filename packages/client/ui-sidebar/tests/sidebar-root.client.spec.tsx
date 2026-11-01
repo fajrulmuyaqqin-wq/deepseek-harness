@@ -38,7 +38,7 @@ type AttentionSnapshot = Parameters<Parameters<SidebarRootComponentProps['useSes
 const noAttention: AttentionSnapshot = new Map()
 const useSessionStatus: SidebarRootComponentProps['useSessionStatus'] = selector => selector(noAttention)
 const useCurrentSessionId: SidebarRootComponentProps['useCurrentSessionId'] = selector => selector(undefined)
-const useActiveView: SidebarRootComponentProps['useActiveView'] = selector => selector(undefined)
+const useActiveView: SidebarRootComponentProps['useActiveView'] = selector => selector('chat')
 
 function makeHeaderProps(): HeaderLeadingControlsProps {
   return {
@@ -47,6 +47,7 @@ function makeHeaderProps(): HeaderLeadingControlsProps {
     usePanelInfo, useResource, useWorkspaces: neverHook, ...allowAllAccess,
     usePanels: selector => selector([]), useShortcuts: selector => selector([]),
     useEntryPins: selector => selector([]), useEntryActions: selector => selector(false),
+    useCurrentSessionId, useActiveView, toggleTrajectory: vi.fn(),
     selectPanel: vi.fn(), setPinned: vi.fn(), toggleSidebar: vi.fn(),
     startSession: vi.fn(), trackEntryClick: vi.fn(), t,
   }
@@ -76,7 +77,8 @@ function mountShell({ collapsed = false, width = 300, drawer = false, shortcuts 
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])} useEntryPins={selector => selector([])}
       useEntryActions={selector => selector(false)} setPinned={vi.fn()}
       useShortcuts={selector => selector(shortcuts)}
-      useContextMenu={contextMenuHook()} useResource={useResource} useWorkspaces={neverHook} useActiveView={useActiveView} useCurrentSessionId={useCurrentSessionId}
+      useContextMenu={contextMenuHook()} useResource={useResource} useWorkspaces={neverHook}
+      useActiveView={useActiveView} useCurrentSessionId={useCurrentSessionId}
       {...allowAllAccess}
       startSession={startSession} toggleSidebar={toggleSidebar} trackEntryClick={trackEntryClick} t={t}
       renderSlot={((
@@ -189,7 +191,8 @@ describe('SidebarRoot shell', () => {
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])} useEntryPins={selector => selector([])}
       useEntryActions={selector => selector(false)} setPinned={vi.fn()}
       useShortcuts={selector => selector([])}
-      useContextMenu={contextMenuHook()} useResource={useResource} useWorkspaces={neverHook} useActiveView={useActiveView} useCurrentSessionId={useCurrentSessionId}
+      useContextMenu={contextMenuHook()} useResource={useResource} useWorkspaces={neverHook}
+      useActiveView={useActiveView} useCurrentSessionId={useCurrentSessionId}
       {...allowAllAccess}
       useRemoteAccess={useRemoteAccess}
       startSession={startSession} toggleSidebar={toggleSidebar} trackEntryClick={vi.fn()} t={t}
@@ -221,7 +224,8 @@ describe('SidebarRoot shell', () => {
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])} useEntryPins={selector => selector([])}
       useEntryActions={selector => selector(false)} setPinned={vi.fn()}
       useShortcuts={selector => selector([])}
-      useContextMenu={contextMenuHook()} useResource={useResource} useWorkspaces={neverHook} useActiveView={useActiveView} useCurrentSessionId={useCurrentSessionId}
+      useContextMenu={contextMenuHook()} useResource={useResource} useWorkspaces={neverHook}
+      useActiveView={useActiveView} useCurrentSessionId={useCurrentSessionId}
       {...allowAllAccess}
       startSession={vi.fn()} toggleSidebar={vi.fn()} trackEntryClick={vi.fn()} t={t}
       renderSlot={((_key: string, _owner: unknown, options?: { fallback?: ReactNode }) =>
@@ -245,7 +249,8 @@ describe('SidebarRoot shell', () => {
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])} useEntryPins={selector => selector([])}
       useEntryActions={selector => selector(false)} setPinned={vi.fn()}
       useShortcuts={selector => selector([])}
-      useContextMenu={contextMenuHook()} useResource={useResource} useWorkspaces={neverHook} useActiveView={useActiveView} useCurrentSessionId={useCurrentSessionId}
+      useContextMenu={contextMenuHook()} useResource={useResource} useWorkspaces={neverHook}
+      useActiveView={useActiveView} useCurrentSessionId={useCurrentSessionId}
       {...allowAllAccess}
       startSession={vi.fn()} toggleSidebar={vi.fn()} trackEntryClick={vi.fn()} t={t}
       renderSlot={((_key: string, _owner: unknown, options?: { fallback?: ReactNode }) =>
@@ -273,7 +278,8 @@ describe('SidebarRoot shell', () => {
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])} useEntryPins={selector => selector([])}
       useEntryActions={selector => selector(false)} setPinned={vi.fn()}
       useShortcuts={selector => selector([])}
-      useContextMenu={contextMenuHook()} useResource={useResource} useWorkspaces={neverHook} useActiveView={useActiveView} useCurrentSessionId={useCurrentSessionId}
+      useContextMenu={contextMenuHook()} useResource={useResource} useWorkspaces={neverHook}
+      useActiveView={useActiveView} useCurrentSessionId={useCurrentSessionId}
       {...allowAllAccess}
       startSession={startSession} toggleSidebar={vi.fn()} trackEntryClick={trackEntryClick} t={t}
       renderSlot={((_key: string, _owner: unknown, options?: { fallback?: ReactNode }) =>
@@ -324,7 +330,8 @@ describe('SidebarRoot shell', () => {
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])} useEntryPins={selector => selector([])}
       useEntryActions={selector => selector(false)} setPinned={vi.fn()}
       useShortcuts={selector => selector([])}
-      useContextMenu={contextMenuHook()} useResource={useResource} useWorkspaces={neverHook} useActiveView={useActiveView} useCurrentSessionId={useCurrentSessionId}
+      useContextMenu={contextMenuHook()} useResource={useResource} useWorkspaces={neverHook}
+      useActiveView={useActiveView} useCurrentSessionId={useCurrentSessionId}
       {...allowAllAccess}
       startSession={vi.fn()} toggleSidebar={vi.fn()} trackEntryClick={vi.fn()} t={t}
       renderSlot={((_key: string, _owner: unknown, options?: { fallback?: ReactNode }) =>
@@ -388,7 +395,8 @@ describe('SidebarRoot shell', () => {
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])} useEntryPins={selector => selector([])}
       useEntryActions={selector => selector(false)} setPinned={vi.fn()}
       useShortcuts={selector => selector([])}
-      useContextMenu={contextMenuHook()} useResource={useResource} useWorkspaces={neverHook} useActiveView={useActiveView} useCurrentSessionId={useCurrentSessionId}
+      useContextMenu={contextMenuHook()} useResource={useResource} useWorkspaces={neverHook}
+      useActiveView={useActiveView} useCurrentSessionId={useCurrentSessionId}
       {...allowAllAccess}
       startSession={vi.fn()} toggleSidebar={vi.fn()} trackEntryClick={vi.fn()} t={t}
       renderSlot={((key: string) => key === 'sidebar.toggle.badge'

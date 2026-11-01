@@ -174,8 +174,8 @@ export type SidebarRootInjected = {
   hooks: {
     panels: ObservableSnapshot<readonly SidebarPanelMetadata[]>
     shortcuts: ObservableSnapshot<readonly ShortcutCatalogEntry[]>
-    currentSessionId?: ObservableSnapshot<SessionId | undefined>
-    activeView?: ObservableSnapshot<string>
+    currentSessionId: ObservableSnapshot<SessionId | undefined>
+    activeView: ObservableSnapshot<string>
     /** Ids of unpinned panel launchers held in memory until plugin reload. */
     entryPins: ObservableSnapshot<readonly string[]>
     /** Whether `sidebar.panellist.actions` has registrations. */

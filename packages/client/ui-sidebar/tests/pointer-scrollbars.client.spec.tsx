@@ -29,7 +29,7 @@ type AttentionSnapshot = Parameters<Parameters<SidebarRootComponentProps['useSes
 const noAttention: AttentionSnapshot = new Map()
 const useSessionStatus: SidebarRootComponentProps['useSessionStatus'] = selector => selector(noAttention)
 const useCurrentSessionId: SidebarRootComponentProps['useCurrentSessionId'] = selector => selector(undefined)
-const useActiveView: SidebarRootComponentProps['useActiveView'] = selector => selector(undefined)
+const useActiveView: SidebarRootComponentProps['useActiveView'] = selector => selector('chat')
 
 afterEach(() => {
   cleanup()
@@ -49,7 +49,8 @@ function mountColumn(): { column: HTMLElement; quiet: () => boolean } {
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])} useEntryPins={selector => selector([])}
       useEntryActions={selector => selector(false)} setPinned={vi.fn()}
       useShortcuts={selector => selector([])}
-      useContextMenu={contextMenuHook()} useResource={useResource} useWorkspaces={neverHook} useActiveView={useActiveView} useCurrentSessionId={useCurrentSessionId}
+      useContextMenu={contextMenuHook()} useResource={useResource} useWorkspaces={neverHook}
+      useActiveView={useActiveView} useCurrentSessionId={useCurrentSessionId}
       {...allowAllAccess}
       startSession={vi.fn()} toggleSidebar={vi.fn()} trackEntryClick={vi.fn()} t={t}
       renderSlot={((_key: string, owner: SidebarSectionOwnerProps) =>
