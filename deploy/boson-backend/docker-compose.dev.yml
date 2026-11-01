@@ -1,0 +1,151 @@
+# =============================================================================
+# Craft Suite & Boson Backend — Unified Local Dev Compose
+# Menggunakan Docker images yang SUDAH ADA di lokal (Zero New Downloads).
+# Mendukung hot-reload langsung ke source code lokal tanpa rebuild image.
+# =============================================================================
+
+version: '3.8'
+
+networks:
+  craft-dev-net:
+    driver: bridge
+
+volumes:
+  db_data:
+    driver: local
+
+services:
+  # 1. Database Core PostgreSQL (Supabase 15)
+  db:
+    image: supabase/postgres:15.1.1.78
+    container_name: boson-db
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bosonsecretpassword}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./init-scripts/01-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    networks:
+      - craft-dev-net
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Supabase GoTrue Auth
+  auth:
+    image: supabase/gotrue:v2.158.1
+    container_name: boson-auth
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${API_EXTERNAL_URL:-http://localhost:8000}/auth/v1
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-bosonsecretpassword}@db:5432/${POSTGRES_DB:-postgres}
+      GOTRUE_SITE_URL: ${SITE_URL:-http://localhost:3080}
+      GOTRUE_URI_ALLOW_LIST: "*"
+      GOTRUE_JWT_SECRET: ${JWT_SECRET:-boson_super_secret_jwt_key_must_be_32_chars_long!}
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_DISABLE_SIGNUP: "false"
+    networks:
+      - craft-dev-net
+
+  # 3. PostgREST API
+  rest:
+    image: postgrest/postgrest:v12.0.1
+    container_name: boson-rest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD:-bosonsecretpassword}@db:5432/${POSTGRES_DB:-postgres}
+      PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS:-public,auth}
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET:-boson_super_secret_jwt_key_must_be_32_chars_long!}
+    networks:
+      - craft-dev-net
+
+  # 4. Supabase Studio Dashboard
+  dashboard:
+    image: supabase/studio:latest
+    container_name: boson-studio-dashboard
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${STUDIO_PORT:-3001}:3000"
+    environment:
+      SUPABASE_URL: http://gateway:8080
+      STUDIO_PG_META_URL: http://gateway:8080/pg-meta
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bosonsecretpassword}
+      DEFAULT_ORGANIZATION_NAME: "Boson Studio"
+      DEFAULT_PROJECT_NAME: "Local Development"
+    networks:
+      - craft-dev-net
+
+  # 5. Boson Unified API Gateway (Live Hot-Reload Volume Mount)
+  gateway:
+    image: boson-backend-gateway:latest
+    container_name: boson-gateway
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      auth:
+        condition: service_started
+      litellm:
+        condition: service_started
+    ports:
+      - "0.0.0.0:8088:8080"
+      - "0.0.0.0:5001:8080"
+    environment:
+      NODE_ENV: development
+      PORT: 8080
+      POSTGRES_URL: postgres://postgres:${POSTGRES_PASSWORD:-bosonsecretpassword}@db:5432/${POSTGRES_DB:-postgres}
+      POSTGREST_URL: http://rest:3000
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy_service_role_key}
+      DEEPSEEK_API_KEY: ${LITELLM_MASTER_KEY:-sk-admin}
+      DEEPSEEK_UPSTREAM: http://litellm:4000
+      PLATFORM_PUBLIC_URL: ${PLATFORM_PUBLIC_URL:-http://localhost:8088}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://172.18.0.1:18080/api/otel
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_SERVICE_NAME: boson-gateway
+    volumes:
+      - ./gateway/src:/app/src:ro
+    networks:
+      - craft-dev-net
+
+  # 6. LiteLLM Proxy Router
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: boson-litellm
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${LITELLM_PORT:-4000}:4000"
+    environment:
+      - STORE_MODEL_IN_DB=False
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-${DEEPSEEK_MASTER_KEY:-}}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-admin}
+      - UI_USERNAME=${UI_USERNAME:-admin}
+      - UI_PASSWORD=${UI_PASSWORD:-admin}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://172.18.0.1:18080/api/otel
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_SERVICE_NAME=boson-litellm
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    networks:
+      - craft-dev-net

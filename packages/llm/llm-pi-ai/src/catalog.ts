@@ -14,6 +14,7 @@
 
 import { builtinProviders, getAllBuiltinModels, getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 import type { BuiltinProvider } from '@earendil-works/pi-ai/providers/all'
+import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 import type {
   AnthropicMessagesCompat,
   Api,
@@ -178,6 +179,84 @@ function servesChat(provider: Provider): boolean {
   return getBuiltinModels(id).length > 0 || getAllBuiltinModels(id).length === 0
 }
 
+export const BOSON_DEFAULT_BASE_URL = 'http://127.0.0.1:8088/v1'
+
+export const BOSON_CATALOG_MODELS: readonly {
+  id: string
+  name: string
+  contextWindow: number
+  maxTokens: number
+  input: readonly ('text' | 'image')[]
+  thinkingFormat?: 'deepseek'
+}[] = [
+  { id: 'deepseek-chat', name: 'DeepSeek V3 (Chat)', contextWindow: 64000, maxTokens: 8192, input: ['text'] },
+  { id: 'deepseek-flash', name: 'DeepSeek V4.1 Flash', contextWindow: 1000000, maxTokens: 256000, input: ['text', 'image'] },
+  { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', contextWindow: 1000000, maxTokens: 256000, input: ['text'] },
+  { id: 'deepseek-reasoner', name: 'DeepSeek R1 (Reasoning)', contextWindow: 64000, maxTokens: 8192, input: ['text'], thinkingFormat: 'deepseek' },
+  { id: 'claude-3-5-sonnet', name: 'Claude 3.5 Sonnet', contextWindow: 200000, maxTokens: 8192, input: ['text', 'image'] },
+  { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, maxTokens: 4096, input: ['text', 'image'] },
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', contextWindow: 1000000, maxTokens: 8192, input: ['text', 'image'] },
+  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', contextWindow: 1000000, maxTokens: 8192, input: ['text', 'image'] },
+  { id: 'llama-3.3-70b-free', name: 'Llama 3.3 70B (Free Community)', contextWindow: 128000, maxTokens: 8192, input: ['text'] },
+]
+
+let bosonProviderInstance: Provider | undefined
+let bosonModelsIndex: Map<string, Model<Api>> | undefined
+
+export function getBosonCatalogModels(): Map<string, Model<Api>> {
+  if (bosonModelsIndex === undefined) {
+    const map = new Map<string, Model<Api>>()
+    const baseUrl = process.env.DEEPSEEK_BASE_URL
+      ? (process.env.DEEPSEEK_BASE_URL.endsWith('/v1') ? process.env.DEEPSEEK_BASE_URL : `${process.env.DEEPSEEK_BASE_URL}/v1`)
+      : BOSON_DEFAULT_BASE_URL
+    for (const m of BOSON_CATALOG_MODELS) {
+      map.set(m.id, {
+        id: m.id,
+        name: m.name,
+        api: 'openai-completions',
+        provider: 'boson',
+        baseUrl,
+        reasoning: m.id === 'deepseek-reasoner',
+        input: [...m.input],
+        cost: NO_COST,
+        contextWindow: m.contextWindow,
+        maxTokens: m.maxTokens,
+        ...m.thinkingFormat ? { compat: { thinkingFormat: m.thinkingFormat } } : {},
+      })
+    }
+    bosonModelsIndex = map
+  }
+  return bosonModelsIndex
+}
+
+export function getBosonCatalogProvider(): Provider {
+  if (bosonProviderInstance === undefined) {
+    const models = [...getBosonCatalogModels().values()]
+    const streams = openAICompletionsApi()
+    const baseUrl = process.env.DEEPSEEK_BASE_URL
+      ? (process.env.DEEPSEEK_BASE_URL.endsWith('/v1') ? process.env.DEEPSEEK_BASE_URL : `${process.env.DEEPSEEK_BASE_URL}/v1`)
+      : BOSON_DEFAULT_BASE_URL
+    bosonProviderInstance = {
+      id: 'boson',
+      name: 'Boson Gateway',
+      baseUrl,
+      auth: {
+        apiKey: {
+          name: 'Boson Gateway',
+          resolve: ({ credential }) => Promise.resolve({
+            auth: credential?.key === undefined ? {} : { apiKey: credential.key },
+            source: 'Boson Gateway',
+          }),
+        },
+      },
+      getModels: () => models,
+      stream: (model, context, options) => streams.stream(model, context, options),
+      streamSimple: (model, context, options) => streams.streamSimple(model, context, options),
+    }
+  }
+  return bosonProviderInstance
+}
+
 /**
  * Installed catalog providers this adapter serves, by id, constructed once.
  * Each entry owns the API implementations for its own models, which is why a
@@ -197,6 +276,7 @@ function catalogProviders(): Map<string, Provider> {
  *   or ships without a chat model.
  */
 export function catalogProvider(provider: string): Provider | undefined {
+  if (provider === 'boson') return getBosonCatalogProvider()
   return catalogProviders().get(provider)
 }
 
@@ -206,7 +286,11 @@ export function catalogProvider(provider: string): Provider | undefined {
  * @returns the catalog provider ids, in catalog order.
  */
 export function catalogProviderIds(): readonly string[] {
-  return [...catalogProviders().keys()]
+  const ids = [...catalogProviders().keys()]
+  if (!ids.includes('boson') && builtinProviders().some(p => p.id === 'google')) {
+    ids.push('boson')
+  }
+  return ids
 }
 
 /**
@@ -215,6 +299,7 @@ export function catalogProviderIds(): readonly string[] {
  * @returns catalog models by id; empty for a route {@link catalogProvider} does not return.
  */
 export function catalogModels(provider: string): Map<string, Model<Api>> {
+  if (provider === 'boson') return getBosonCatalogModels()
   if (!catalogProviders().has(provider)) return new Map()
   const models = getBuiltinModels(provider as BuiltinProvider) as Model<Api>[]
   return new Map(models.map(model => [model.id, model]))

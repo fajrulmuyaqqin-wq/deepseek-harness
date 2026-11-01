@@ -35,7 +35,11 @@ VALUES
     ('boson-cli', 'Boson Developer CLI', '{"*"}', 1),
     ('pipeline', 'Application Pipeline & CI/CD', '{"*"}', 20),
     ('service-account', 'Service Account Client', '{"*"}', 20),
-    ('agent-runtime', 'Autonomous Agent Runtime', '{"*"}', 50)
+    ('agent-runtime', 'Autonomous Agent Runtime', '{"*"}', 50),
+    ('artcraft-studio', 'ArtCraft Studio WebApp & Editor', '{"*"}', 10),
+    ('artcraft-website', 'ArtCraft Website Portal', '{"*"}', 10),
+    ('open-design', 'OpenDesign Studio & Daemon', '{"*"}', 10),
+    ('deepseek-harness', 'DeepSeek Harness Autonomous Agent', '{"*"}', 20)
 ON CONFLICT (id) DO NOTHING;
 
 -- 3. Tabel Dompet / Saldo Pengguna (Multi-Bucket: Bonus, Subs, Normal/Deposit)

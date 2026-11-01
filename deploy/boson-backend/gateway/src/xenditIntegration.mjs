@@ -215,8 +215,20 @@ export async function processXenditPaymentWebhook(payload, callbackTokenHeader, 
   }
 
   if (isSubscription) {
-    // Mode Langganan: Isi kuota subscription bulanan (Starter $12 / Pro $18)
-    const monthlyPool = plan === 'starter' ? 12.00 : 18.00
+    // Mode Langganan ArtCraft: Alokasi kuota kredit bulanan
+    // Basic: 1,000 credits ($10.00)
+    // Pro: 3,750 credits ($37.50)
+    // Max: 6,600 credits ($66.00)
+    let monthlyPool = 37.50
+    const lowerPlan = String(plan).toLowerCase()
+    if (lowerPlan.includes('basic') || lowerPlan.includes('starter')) {
+      monthlyPool = 10.00
+    } else if (lowerPlan.includes('max') || lowerPlan.includes('teams') || lowerPlan.includes('studio')) {
+      monthlyPool = 66.00
+    } else if (lowerPlan.includes('pro')) {
+      monthlyPool = 37.50
+    }
+
     const newSubsBalance = Number(wallet?.subscription_balance || 0) + monthlyPool
 
     await supabase.from('wallets').update({

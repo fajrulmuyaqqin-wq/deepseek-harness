@@ -57,6 +57,8 @@ export const BOSON_FALLBACK_MODELS: readonly LlmDiscoveredModel[] = [
   { id: 'claude-3-5-sonnet', name: 'Claude 3.5 Sonnet', contextWindow: 200000, maxTokens: 8192, inputModalities: ['text', 'image'] },
   { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, maxTokens: 4096, inputModalities: ['text', 'image'] },
   { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', contextWindow: 1000000, maxTokens: 8192, inputModalities: ['text', 'image'] },
+  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', contextWindow: 1000000, maxTokens: 8192, inputModalities: ['text', 'image'] },
+  { id: 'llama-3.3-70b-free', name: 'Llama 3.3 70B (Free Community)', contextWindow: 128000, maxTokens: 8192, inputModalities: ['text'] },
 ]
 
 /**

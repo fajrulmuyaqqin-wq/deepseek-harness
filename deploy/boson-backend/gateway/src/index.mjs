@@ -21,11 +21,13 @@ import { syncTierBudgetsToLiteLLM, syncUserTierToLiteLLM, recordUserSpendToLiteL
 const app = express()
 app.set('trust proxy', 1)
 
+export const PLATFORM_NAME = process.env.PLATFORM_NAME || process.env.BRAND_NAME || 'Boson Studio'
+
 // 0. Healthcheck & Liveness Endpoint
 app.get(['/health', '/api/health', '/status'], (_req, res) => {
   res.json({
     status: 'healthy',
-    service: 'Boson Studio Unified LLM Gateway',
+    service: `${PLATFORM_NAME} Unified LLM Gateway`,
     version: '1.0.0',
     timestamp: new Date().toISOString(),
     uptime: Math.round(process.uptime()),
@@ -55,6 +57,8 @@ const defaultAllowedOrigins = [
   'http://127.0.0.1:8080',
   'http://localhost:8088',
   'http://127.0.0.1:8088',
+  'http://localhost:4201',
+  'http://127.0.0.1:4201',
 ]
 
 const customOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean)
@@ -67,8 +71,8 @@ app.use(cors({
     if (allowedOrigins.has(origin)) {
       return callback(null, true)
     }
-    // Jika dalam development, izinkan localhost dengan port apapun
-    if (process.env.NODE_ENV !== 'production' && (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:'))) {
+    // Jika dalam development, izinkan localhost atau localho.st dengan port apapun
+    if (process.env.NODE_ENV !== 'production' && (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:') || origin.includes('.localho.st'))) {
       return callback(null, true)
     }
     return callback(new Error(`CORS Error: Origin '${origin}' ditolak oleh kebijakan keamanan Boson Studio.`))
@@ -817,32 +821,80 @@ app.post('/auth-api/v0/dsh/auth_init', async (req, res) => {
 app.get('/v1/session', async (req, res) => {
   const token = extractAuthToken(req)
   if (!token) {
-    return res.json({ success: true, logged_in: false })
+    return res.json({ success: true, logged_in: false, data: { loggedIn: false } })
   }
   const { user } = await resolveUserFromToken(token, req)
   if (!user || !user.id) {
-    return res.json({ success: true, logged_in: false })
+    return res.json({ success: true, logged_in: false, data: { loggedIn: false } })
   }
   const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle()
   const { data: wallet } = await supabase.from('wallets').select('*').eq('user_id', user.id).maybeSingle()
 
   const username = profile?.full_name || profile?.email?.split('@')[0] || 'User'
+  const displayName = profile?.full_name || username
+  const emailGravatarHash = createHash('md5').update(String(profile?.email || user.email || '').trim().toLowerCase()).digest('hex')
+
+  const userInfo = {
+    user_token: user.id,
+    username,
+    display_name: displayName,
+    email_address: profile?.email || user.email,
+    email_gravatar_hash: emailGravatarHash,
+    core_info: {
+      default_avatar: { color_index: 0, image_index: 0 },
+      display_name: displayName,
+      gravatar_hash: emailGravatarHash,
+      user_token: user.id,
+      username,
+    },
+    can_access_studio: true,
+    maybe_feature_flags: ['studio', 'omni_gen', 'video_gen'],
+    can_use_tts: true,
+    can_use_w2l: true,
+    can_delete_own_tts_results: true,
+    can_delete_own_w2l_results: true,
+    can_delete_own_account: true,
+    can_upload_tts_models: true,
+    can_upload_w2l_templates: true,
+    can_delete_own_tts_models: true,
+    can_delete_own_w2l_templates: true,
+    can_approve_w2l_templates: false,
+    can_edit_other_users_profiles: false,
+    can_edit_other_users_tts_models: false,
+    can_edit_other_users_w2l_templates: false,
+    can_delete_other_users_tts_models: false,
+    can_delete_other_users_tts_results: false,
+    can_delete_other_users_w2l_templates: false,
+    can_delete_other_users_w2l_results: false,
+    can_ban_users: false,
+    can_delete_users: false,
+    onboarding: {
+      email_not_set: false,
+      email_not_confirmed: false,
+      password_not_set: false,
+      username_not_customized: false,
+    },
+  }
+
+  const walletInfo = wallet ? {
+    balance_usd: (Number(wallet.normal_balance || 0) + Number(wallet.bonus_balance || 0) + Number(wallet.subscription_balance || 0)).toFixed(2),
+    normal_balance: Number(wallet.normal_balance || 0).toFixed(2),
+    bonus_balance: Number(wallet.bonus_balance || 0).toFixed(2),
+    subscription_balance: Number(wallet.subscription_balance || 0).toFixed(2),
+    tier: wallet.tier || 'free',
+  } : null
+
   return res.json({
     success: true,
     logged_in: true,
-    user: {
-      user_token: user.id,
-      username,
-      display_name: profile?.full_name || username,
-      email_address: profile?.email || user.email,
+    user: userInfo,
+    wallet: walletInfo,
+    data: {
+      loggedIn: true,
+      user: userInfo,
+      wallet: walletInfo,
+      onboarding: userInfo.onboarding,
     },
-    wallet: wallet ? {
-      balance_usd: (Number(wallet.normal_balance || 0) + Number(wallet.bonus_balance || 0) + Number(wallet.subscription_balance || 0)).toFixed(2),
-      normal_balance: Number(wallet.normal_balance || 0).toFixed(2),
-      bonus_balance: Number(wallet.bonus_balance || 0).toFixed(2),
-      subscription_balance: Number(wallet.subscription_balance || 0).toFixed(2),
-      tier: wallet.tier || 'free',
-    } : null,
   })
 })
 
@@ -895,7 +947,8 @@ app.post('/v1/login', authRateLimiter, async (req, res) => {
 })
 
 app.post('/v1/create_account', authRateLimiter, async (req, res) => {
-  const { username, email_address, password, password_confirmation } = req.body || {}
+  const { username, password, password_confirmation } = req.body || {}
+  const email_address = req.body?.email_address || req.body?.email
   if (!email_address || !password) {
     return res.status(400).json({ success: false, error_message: 'Email dan kata sandi wajib diisi' })
   }
@@ -989,18 +1042,26 @@ app.post([
   '/v1/stripe_artcraft/user_signup_subscription_checkout',
   '/v1/stripe_artcraft/checkout/credits_pack',
 ], async (req, res) => {
-  const plan = req.body?.plan || 'pro'
+  const plan = req.body?.plan || 'artcraft_pro'
+  const cadence = req.body?.cadence || 'monthly'
   const creditsPack = req.body?.credits_pack
-  let amountUSD = 14.00
+  let amountUSD = 35.00
+
   if (creditsPack) {
-    const match = String(creditsPack).match(/(\d+)/)
-    amountUSD = match ? parseFloat(match[1]) : 25.00
-  } else if (plan === 'starter') {
-    amountUSD = 9.00
-  } else if (plan === 'pro') {
-    amountUSD = 19.00
-  } else if (plan === 'teams') {
-    amountUSD = 49.00
+    if (creditsPack === 'artcraft_1000') amountUSD = 10.00
+    else if (creditsPack === 'artcraft_2500') amountUSD = 25.00
+    else if (creditsPack === 'artcraft_5000') amountUSD = 50.00
+    else if (creditsPack === 'artcraft_10000') amountUSD = 100.00
+    else {
+      const match = String(creditsPack).match(/(\d+)/)
+      amountUSD = match ? parseFloat(match[1]) / 100 : 25.00
+    }
+  } else if (plan === 'artcraft_basic' || plan === 'basic' || plan === 'starter') {
+    amountUSD = cadence === 'yearly' ? 96.00 : 10.00
+  } else if (plan === 'artcraft_pro' || plan === 'pro') {
+    amountUSD = cadence === 'yearly' ? 336.00 : 35.00
+  } else if (plan === 'artcraft_max' || plan === 'max' || plan === 'teams') {
+    amountUSD = cadence === 'yearly' ? 576.00 : 60.00
   } else if (plan === 'studio') {
     amountUSD = 99.00
   }
@@ -1033,9 +1094,55 @@ app.post('/v1/web_referrals/record', (_req, res) => {
 
 // Multi-Modal Omnigen & Job Polling Simulation & Upstream Proxy
 const omniGenJobs = new Map()
-const STORYTELLER_UPSTREAM = process.env.STORYTELLER_UPSTREAM || 'http://127.0.0.1:12345'
+const STORYTELLER_UPSTREAM = process.env.STORYTELLER_UPSTREAM || 'http://172.17.0.1:12345'
 
-app.post(['/v1/omni_gen/generate/video', '/v1/omni_gen/generate/image', '/v1/omni_gen/generate/audio'], async (req, res) => {
+// Models proxy: forwards requests for image/video/audio/mesh models to Storyteller backend
+app.get(['/v1/omni_gen/models', '/v1/omni_gen/models/:category'], async (req, res) => {
+  try {
+    const upstreamRes = await fetch(`${STORYTELLER_UPSTREAM}${req.originalUrl || req.url}`, {
+      headers: {
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(3000),
+    })
+    if (upstreamRes.ok) {
+      const data = await upstreamRes.json()
+      return res.json(data)
+    }
+  } catch (err) {
+    console.warn(`[OmniGen] Failed to fetch upstream models (${req.url}): ${err.message}`)
+  }
+
+  // Fallback if upstream is down or starting up
+  return res.json({
+    success: true,
+    models: [
+      {
+        model: 'flux_1_dev',
+        model_creator: 'black_forest_labs',
+        full_name: 'Flux 1 Dev',
+        text_prompt_supported: true,
+        image_refs_supported: true,
+        aspect_ratio_options: ['square', 'wide_sixteen_by_nine', 'tall_nine_by_sixteen'],
+        aspect_ratio_default: 'square',
+      },
+      {
+        model: 'nano_banana',
+        model_creator: 'artcraft',
+        full_name: 'Nano Banana',
+        text_prompt_supported: true,
+        image_refs_supported: false,
+        aspect_ratio_options: ['square'],
+        aspect_ratio_default: 'square',
+      }
+    ],
+    providers: [{ provider: 'artcraft', models: [{ model: 'flux_1_dev' }, { model: 'nano_banana' }] }]
+  })
+})
+
+// OmniGen cost estimation proxy
+app.post(['/v1/omni_gen/cost', '/v1/omni_gen/cost/:category'], async (req, res) => {
+  const category = req.params.category || 'image'
   try {
     const upstreamRes = await fetch(`${STORYTELLER_UPSTREAM}${req.originalUrl || req.url}`, {
       method: 'POST',
@@ -1044,7 +1151,38 @@ app.post(['/v1/omni_gen/generate/video', '/v1/omni_gen/generate/image', '/v1/omn
         ...(req.headers['authorization'] ? { Authorization: req.headers['authorization'] } : {}),
       },
       body: JSON.stringify(req.body),
-      signal: AbortSignal.timeout(1500),
+      signal: AbortSignal.timeout(3000),
+    })
+    if (upstreamRes.ok) {
+      const data = await upstreamRes.json()
+      return res.json(data)
+    }
+  } catch (err) {
+    console.warn(`[OmniGen] Cost estimate upstream warning (${category}): ${err.message}`)
+  }
+
+  return res.json({
+    success: true,
+    cost_in_credits: 4,
+    cost_in_usd_cents: 4,
+    is_free: false,
+    is_unlimited: false,
+    is_rate_limited: false,
+    has_watermark: false,
+    failures_are_refunded: null,
+  })
+})
+
+app.post(['/v1/omni_gen/generate/video', '/v1/omni_gen/generate/image', '/v1/omni_gen/generate/audio', '/v1/omni_gen/generate/mesh', '/v1/omni_gen/generate/splat'], async (req, res) => {
+  try {
+    const upstreamRes = await fetch(`${STORYTELLER_UPSTREAM}${req.originalUrl || req.url}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(req.headers['authorization'] ? { Authorization: req.headers['authorization'] } : {}),
+      },
+      body: JSON.stringify(req.body),
+      signal: AbortSignal.timeout(3000),
     })
     if (upstreamRes.ok) {
       const data = await upstreamRes.json()
@@ -1054,18 +1192,95 @@ app.post(['/v1/omni_gen/generate/video', '/v1/omni_gen/generate/image', '/v1/omn
     // Upstream offline fallback
   }
 
+  const pathParts = (req.originalUrl || req.url).split('?')[0].split('/')
+  const category = pathParts[pathParts.length - 1] || 'image'
   const jobToken = `job_${Date.now()}_${randomUUID().slice(0, 8)}`
   omniGenJobs.set(jobToken, {
     jobToken,
     createdAt: Date.now(),
-    model: req.body?.model || 'wan-2.1-t2v-14b',
+    model: req.body?.model || (category === 'video' ? 'wan-2.1-t2v-14b' : 'nano_banana'),
     prompt: req.body?.prompt || '',
+    category,
   })
 
   return res.json({
     success: true,
     inference_job_token: jobToken,
     jobToken,
+  })
+})
+
+app.get(['/v1/jobs/session', '/v1/jobs/batch'], async (req, res) => {
+  try {
+    const upstreamRes = await fetch(`${STORYTELLER_UPSTREAM}${req.originalUrl || req.url}`, {
+      headers: {
+        ...(req.headers['authorization'] ? { Authorization: req.headers['authorization'] } : {}),
+        ...(req.headers['session'] ? { Session: req.headers['session'] } : {}),
+      },
+      signal: AbortSignal.timeout(1500),
+    })
+    if (upstreamRes.ok) {
+      const data = await upstreamRes.json()
+      if (data && data.success && Array.isArray(data.jobs) && data.jobs.length > 0) {
+        return res.json(data)
+      }
+    }
+  } catch {
+    // Upstream fallback
+  }
+
+  const jobsList = Array.from(omniGenJobs.values()).map(j => {
+    const isCompleted = Date.now() - j.createdAt > 3500
+    const category = j.category || (j.model?.includes('video') || j.model?.includes('wan') || j.model?.includes('kling') ? 'video' : 'image')
+    const cdnUrl = j.resultUrl || (category === 'video' ? '/videos/features/WorldLabs_Demo_2.webm' : '/images/placeholder.webp')
+
+    return {
+      job_token: j.jobToken,
+      created_at: new Date(j.createdAt).toISOString(),
+      updated_at: new Date().toISOString(),
+      request: {
+        inference_category: category,
+        maybe_model_title: j.model || (category === 'video' ? 'Wan 2.1' : 'Nano Banana'),
+        maybe_model_token: j.model || (category === 'video' ? 'wan-2.1-t2v-14b' : 'nano_banana'),
+        maybe_model_type: j.model || (category === 'video' ? 'wan-2.1-t2v-14b' : 'nano_banana'),
+        maybe_prompt_token: null,
+        maybe_raw_inference_text: j.prompt || '',
+        maybe_style_name: '',
+      },
+      status: {
+        attempt_count: 1,
+        maybe_assigned_cluster: 'cluster-1',
+        maybe_assigned_worker: 'worker-1',
+        maybe_extra_status_description: isCompleted ? '' : 'Generating neural output...',
+        maybe_failure_category: '',
+        maybe_failure_category_updated: null,
+        maybe_failure_message: null,
+        maybe_first_started_at: new Date(j.createdAt).toISOString(),
+        requires_keepalive: false,
+        progress_percentage: isCompleted ? 100 : 50,
+        status: isCompleted ? 'complete_success' : 'pending',
+      },
+      maybe_result: isCompleted ? {
+        entity_token: j.jobToken,
+        entity_type: category,
+        maybe_successfully_completed_at: new Date().toISOString(),
+        media_links: {
+          cdn_url: cdnUrl,
+        },
+      } : null,
+      state: {
+        status: { status: isCompleted ? 'complete_success' : 'pending' },
+        maybe_result: isCompleted ? {
+          media_links: { cdn_url: cdnUrl }
+        } : null
+      }
+    }
+  })
+
+  return res.json({
+    success: true,
+    jobs: jobsList,
+    job_states: jobsList.map(j => j.state),
   })
 })
 
@@ -1107,6 +1322,100 @@ app.get('/v1/jobs/job/:jobToken', async (req, res) => {
   })
 })
 
+// Unified Credits Endpoint (ArtCraft webapp balance & wallet sync)
+app.get(['/v1/credits/namespace/:namespace', '/v1/credits/namespace', '/v1/credits'], async (req, res) => {
+  const token = extractAuthToken(req)
+  let wallet = null
+  if (token) {
+    try {
+      const { user } = await resolveUserFromToken(token, req)
+      if (user?.id) {
+        const { data } = await supabase.from('wallets').select('*').eq('user_id', user.id).maybeSingle()
+        wallet = data
+      }
+    } catch {
+      // Continue with default wallet
+    }
+  }
+
+  const freeCredits = Math.round(Number(wallet?.bonus_balance || 1.0) * 100)
+  const monthlyCredits = Math.round(Number(wallet?.subscription_balance || 0) * 100)
+  const bankedCredits = Math.round(Number(wallet?.normal_balance || 0) * 100)
+  const sumTotalCredits = freeCredits + monthlyCredits + bankedCredits
+
+  return res.json({
+    success: true,
+    free_credits: freeCredits,
+    monthly_credits: monthlyCredits,
+    banked_credits: bankedCredits,
+    sum_total_credits: sumTotalCredits,
+  })
+})
+
+// Unified Media Files Endpoints
+app.get([
+  '/v1/media_files/list/user/:username',
+  '/v1/media_files/list_v2/user/:username',
+  '/v1/media_files/list',
+  '/v1/media_files/list_featured',
+  '/v1/media_files/mesh/list',
+  '/v1/media_files/splat/list',
+  '/v1/media_files/search_featured',
+  '/v1/media_files/search_session',
+], async (req, res) => {
+  try {
+    const upstreamUrl = `${STORYTELLER_UPSTREAM}${req.originalUrl || req.url}`
+    const upstreamRes = await fetch(upstreamUrl, {
+      headers: {
+        Accept: 'application/json',
+        ...(req.headers['authorization'] ? { Authorization: req.headers['authorization'] } : {}),
+      },
+      signal: AbortSignal.timeout(3000),
+    })
+    if (upstreamRes.ok) {
+      const data = await upstreamRes.json()
+      return res.json(data)
+    }
+  } catch (err) {
+    console.warn(`[MediaFiles Proxy Error]: ${err.message}`)
+  }
+
+  return res.json({
+    success: true,
+    results: [],
+    pagination: {
+      current_page: 1,
+      page_size: Number(req.query?.page_size) || 40,
+      total_items: 0,
+      total_pages: 0,
+      current: 0,
+      has_more: false,
+    },
+  })
+})
+
+app.all(['/v1/media_files/*', '/v1/media_files'], async (req, res) => {
+  try {
+    const upstreamUrl = `${STORYTELLER_UPSTREAM}${req.originalUrl || req.url}`
+    const upstreamRes = await fetch(upstreamUrl, {
+      method: req.method,
+      headers: {
+        'Content-Type': req.headers['content-type'] || 'application/json',
+        ...(req.headers['authorization'] ? { Authorization: req.headers['authorization'] } : {}),
+      },
+      body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : undefined,
+      signal: AbortSignal.timeout(3000),
+    })
+    if (upstreamRes.ok) {
+      const data = await upstreamRes.json()
+      return res.json(data)
+    }
+  } catch (err) {
+    console.warn(`[MediaFiles General Proxy Error]: ${err.message}`)
+  }
+  return res.json({ success: true, results: [] })
+})
+
 app.get(['/login', '/dsh/authorize'], async (req, res) => {
   const auth_id = req.query.auth_id || req.query.authorize_id
   if (!auth_id) return res.redirect(302, `${FRONTEND_PUBLIC_URL}/pricing`)
@@ -1116,7 +1425,7 @@ app.get(['/login', '/dsh/authorize'], async (req, res) => {
     <html lang="id">
       <head>
         <meta charset="utf-8">
-        <title>Boson Studio - Autentikasi Akun</title>
+        <title>${PLATFORM_NAME} - Autentikasi Akun</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
           * { box-sizing: border-box; }
@@ -1138,7 +1447,7 @@ app.get(['/login', '/dsh/authorize'], async (req, res) => {
       </head>
       <body>
         <div class="card">
-          <div class="logo">Boson Studio</div>
+          <div class="logo">${PLATFORM_NAME}</div>
           <div class="subtitle">Unified AI Coding Assistant & Gateway</div>
           <div class="tabs">
             <div id="tabLogin" class="tab active" onclick="switchTab('login')">Masuk</div>
@@ -1155,7 +1464,7 @@ app.get(['/login', '/dsh/authorize'], async (req, res) => {
             <input type="email" id="email" required placeholder="nama@email.com">
             <label>Kata Sandi</label>
             <input type="password" id="password" required placeholder="••••••••">
-            <button type="submit" id="submitBtn">Masuk ke Boson Studio</button>
+            <button type="submit" id="submitBtn">Masuk ke ${PLATFORM_NAME}</button>
             <div id="bonusNotice" class="notice" style="display: none;">
               ✨ Pendaftaran baru otomatis mendapatkan <strong>$2.00 Welcome Balance</strong> gratis!
             </div>
@@ -1171,14 +1480,15 @@ app.get(['/login', '/dsh/authorize'], async (req, res) => {
               document.getElementById('tabRegister').classList.remove('active');
               document.getElementById('nameGroup').style.display = 'none';
               document.getElementById('bonusNotice').style.display = 'none';
-              document.getElementById('submitBtn').textContent = 'Masuk ke Boson Studio';
+              document.getElementById('submitBtn').textContent = 'Masuk ke ' + ${JSON.stringify(PLATFORM_NAME)};
             } else {
               document.getElementById('tabRegister').classList.add('active');
               document.getElementById('tabLogin').classList.remove('active');
               document.getElementById('nameGroup').style.display = 'block';
               document.getElementById('bonusNotice').style.display = 'block';
-              document.getElementById('submitBtn').textContent = 'Daftar & Klaim Bonus $2.00';
+              document.getElementById('submitBtn').textContent = 'Daftar Akun ' + ${JSON.stringify(PLATFORM_NAME)};
             }
+          }
           }
 
           document.getElementById('authForm').onsubmit = async (e) => {
@@ -1292,7 +1602,7 @@ app.get(['/login-success', '/dsh/authorized'], (req, res) => {
     <html lang="id">
       <head>
         <meta charset="utf-8">
-        <title>Boson Studio - Berhasil Masuk</title>
+        <title>${PLATFORM_NAME} - Berhasil Masuk</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
           body { font-family: system-ui, -apple-system, sans-serif; background: #0b0f19; color: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
@@ -1307,8 +1617,8 @@ app.get(['/login-success', '/dsh/authorized'], (req, res) => {
         <div class="card">
           <div class="icon">✓</div>
           <div class="badge">Autentikasi Sukses</div>
-          <h2>Selamat Datang di Boson Studio</h2>
-          <p>Akun Anda telah berhasil terhubung. Anda dapat menutup tab ini dan kembali ke aplikasi Boson Studio.</p>
+          <h2>Selamat Datang di ${PLATFORM_NAME}</h2>
+          <p>Akun Anda telah berhasil terhubung. Anda dapat menutup tab ini dan kembali ke aplikasi ${PLATFORM_NAME}.</p>
         </div>
       </body>
     </html>
