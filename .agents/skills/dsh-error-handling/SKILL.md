@@ -1,6 +1,7 @@
 ---
 name: dsh-error-handling
 description: Apply error-handling principles when designing or reviewing failures, recovery, retries, background tasks, and user-visible error reports.
+disable-model-invocation: true
 ---
 
 # DeepSeek Harness Error Handling

@@ -1081,6 +1081,35 @@ describe('duplicate loader entry names (#98 opt: runtime shadowing)', () => {
     expect(report.summary.ok).toBe(true)
   })
 
+  it('ignores multi-instance declarative rows across DIFFERENT layers (presets, mcp clients)', () => {
+    // Declarative rows like @deepseek-ai/dsh-agent-preset or @deepseek-ai/dsh-mcp-client
+    // are routine across official and community bundles (or user patches), keyed by
+    // distinct loader entry ids. They do not shadow each other at runtime.
+    const dir = pdir()
+    writeProfile(dir, {
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-web-app', 'community-bundle'] } },
+      dependencies: { '@deepseek-ai/dsh-web-app': '^4.0.1', 'community-bundle': '^1.0.0' },
+    })
+    writeBundle(dir, '@deepseek-ai/dsh-web-app', '4.0.1', [
+      {
+        insert: [
+          { id: 'preset-standard', name: '@deepseek-ai/dsh-agent-preset' },
+        ],
+      },
+    ])
+    writeBundle(dir, 'community-bundle', '1.0.0', [
+      {
+        insert: [
+          { id: 'preset-custom', name: '@deepseek-ai/dsh-agent-preset' },
+        ],
+      },
+    ])
+
+    const report = analyzeProfile(dir, { dshInstallDir: dir })
+    expect(report.duplicateNames.find(d => d.name === '@deepseek-ai/dsh-agent-preset')).toBeUndefined()
+    expect(report.summary.errors.some(e => e.includes('duplicate loader entry id'))).toBe(false)
+  })
+
   it('fresh profile with only the official bundle warns about nothing out of the box', () => {
     // Maintainer-reported false positive (issue #109): an untouched profile
     // with zero community plugins must not be flagged. The official bundle
@@ -2027,6 +2056,25 @@ describe('peer range mismatch', () => {
       satisfied: true,
     })
     expect(report.summary.warnings.some(w => w.includes('workspace-plugin'))).toBe(false)
+  })
+
+  it('accepts a peer requirement satisfied by a prerelease host package across minor/patch increments', () => {
+    const dir = pdir()
+    writeProfile(dir, { name: 'web-profile', dependencies: {} })
+    writePackage(dir, 'plugin-peer-pre', {
+      name: 'plugin-peer-pre',
+      version: '1.0.0',
+      peerDependencies: { '@deepseek-ai/schemastery': '^3.18.2' },
+    })
+    writePackage(dir, '@deepseek-ai/schemastery', {
+      name: '@deepseek-ai/schemastery',
+      version: '3.18.6-alpha.1',
+    })
+
+    const report = analyzeProfile(dir)
+    const peer = report.peerMismatches.find(m => m.plugin === 'plugin-peer-pre')
+    expect(peer?.satisfied).toBe(true)
+    expect(report.summary.warnings.some(w => w.includes('plugin-peer-pre'))).toBe(false)
   })
 })
 

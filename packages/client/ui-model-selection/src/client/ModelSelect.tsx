@@ -36,8 +36,21 @@ import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconCloseFillRegular,
-  IconDataOutlineRegular, IconWarningOutlineRegular, Input, isMobileDevice, rankByName, StateDot, Tag, Toast,
+  IconCheckOutlineRegular,
+  IconChevronDownOutlineRegular,
+  IconChevronLeftOutlineRegular,
+  IconChevronRightOutlineRegular,
+  IconCloseFillRegular,
+  IconCodeOutlineRegular,
+  IconDataOutlineRegular,
+  IconSettingsOutlineRegular,
+  IconWarningOutlineRegular,
+  Input,
+  isMobileDevice,
+  rankByName,
+  StateDot,
+  Tag,
+  Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelLabelOwner, ModelSelectInjected } from './slots.ts'
@@ -45,7 +58,30 @@ import css from './ModelSelect.module.css'
 import { orderModelProviders } from './provider-order.ts'
 
 /** Which pane the dropdown shows: the two-row root or one drilled-in list. */
-type Pane = 'root' | 'model' | 'effort'
+type Pane = 'root' | 'model' | 'effort' | 'agent-cli'
+
+/** CliAgent metadata from /api/agent-runner/agents */
+interface CliAgentInfo {
+  readonly id: string
+  readonly name: string
+  readonly bin: string
+  readonly installed?: boolean
+  readonly version?: string
+  readonly supportsAcp?: boolean
+}
+
+interface AgentListApiResponse {
+  readonly ok?: boolean
+  readonly agents?: readonly CliAgentInfo[]
+}
+
+const DEFAULT_CLI_AGENTS: readonly CliAgentInfo[] = [
+  { id: 'agy', name: 'Google Antigravity', bin: 'agy', version: 'v1.5.5' },
+  { id: 'claude', name: 'Claude Code', bin: 'claude', version: 'v2.1.322' },
+  { id: 'codex', name: 'OpenAI Codex', bin: 'codex', version: 'v0.167.2' },
+  { id: 'opencode', name: 'OpenCode CLI', bin: 'opencode', version: 'v2.2.7' },
+  { id: 'cursor-agent', name: 'Cursor Agent', bin: 'cursor-agent', version: 'v2026.11' },
+]
 
 /** One dynamic effort row; undefined means preserve the provider default. */
 interface EffortChoice {
@@ -56,6 +92,194 @@ interface EffortChoice {
 
 /** Unplaced portal card: hidden but laid out at a fixed origin so offsetWidth/offsetHeight are real (Menu primitive's measure pass). */
 const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
+
+interface ParsedCliModelInfo {
+  readonly id: string
+  readonly cliArg: string
+  readonly displayLabel: string
+  readonly badge?: string
+}
+
+function parseCliModel(
+  agentId: string,
+  modelId: string = 'byok',
+  byokChoice?: { providerId: string; modelId: string; modelName?: string },
+): ParsedCliModelInfo {
+  if (modelId === 'byok') {
+    if (!byokChoice) {
+      return { id: 'byok', cliArg: 'default', displayLabel: 'Model BYOK (Parsed ke CLI)' }
+    }
+    const { providerId, modelId: bModelId, modelName } = byokChoice
+    const name = modelName || bModelId
+
+    if (agentId === 'opencode') {
+      const cleanArg = bModelId.includes('/') ? bModelId : `${providerId}/${bModelId}`
+      return {
+        id: 'byok',
+        cliArg: cleanArg,
+        displayLabel: `${name} (Parsed ke CLI)`,
+        badge: cleanArg,
+      }
+    }
+
+    if (agentId === 'agy') {
+      let mapped = 'gpt-oss-120b-medium'
+      const mLow = bModelId.toLowerCase()
+      const pLow = providerId.toLowerCase()
+      if (pLow === 'google' || mLow.includes('gemini') || mLow.includes('flash')) {
+        mapped = 'gemini-3.8-flash-high'
+      } else if (pLow === 'anthropic' || mLow.includes('claude')) {
+        mapped = 'claude-sonnet-4-6'
+      }
+      return {
+        id: 'byok',
+        cliArg: mapped,
+        displayLabel: `${name} (Parsed: ${mapped})`,
+        badge: mapped,
+      }
+    }
+
+    if (agentId === 'claude') {
+      let mapped = 'sonnet'
+      const mLow = bModelId.toLowerCase()
+      if (mLow.includes('opus')) mapped = 'opus'
+      else if (mLow.includes('haiku')) mapped = 'haiku'
+      return {
+        id: 'byok',
+        cliArg: mapped,
+        displayLabel: `${name} (Parsed: ${mapped})`,
+        badge: mapped,
+      }
+    }
+
+    if (agentId === 'codex') {
+      let mapped = 'gpt-4o'
+      const mLow = bModelId.toLowerCase()
+      if (mLow.includes('o3') || mLow.includes('mini') || mLow.includes('reasoning')) mapped = 'o3-mini'
+      return {
+        id: 'byok',
+        cliArg: mapped,
+        displayLabel: `${name} (Parsed: ${mapped})`,
+        badge: mapped,
+      }
+    }
+
+    return {
+      id: 'byok',
+      cliArg: bModelId,
+      displayLabel: `${name} (Parsed ke CLI)`,
+      badge: bModelId,
+    }
+  }
+
+  if (modelId === 'default') {
+    return { id: 'default', cliArg: 'default', displayLabel: 'Default Model (CLI Auto)' }
+  }
+
+  // Predefined models for opencode
+  if (agentId === 'opencode') {
+    if (modelId === 'opencode-go') return { id: 'opencode-go', cliArg: 'opencode-go', displayLabel: 'OpenCode Go', badge: 'Official' }
+    if (modelId === 'opencode') return { id: 'opencode', cliArg: 'opencode', displayLabel: 'OpenCode Console', badge: 'Console' }
+    if (modelId === 'openai/gpt-4o') return { id: 'openai/gpt-4o', cliArg: 'openai/gpt-4o', displayLabel: 'OpenAI GPT-4o', badge: 'openai' }
+    if (modelId === 'openai/o3-mini') return { id: 'openai/o3-mini', cliArg: 'openai/o3-mini', displayLabel: 'OpenAI o3-mini', badge: 'openai' }
+    if (modelId === 'anthropic/claude-3-5-sonnet') return { id: 'anthropic/claude-3-5-sonnet', cliArg: 'anthropic/claude-3-5-sonnet', displayLabel: 'Claude 3.5 Sonnet', badge: 'anthropic' }
+    if (modelId === 'google/gemini-2.5-pro') return { id: 'google/gemini-2.5-pro', cliArg: 'google/gemini-2.5-pro', displayLabel: 'Gemini 2.5 Pro', badge: 'google' }
+    if (modelId === 'github-copilot') return { id: 'github-copilot', cliArg: 'github-copilot', displayLabel: 'GitHub Copilot', badge: 'copilot' }
+    if (modelId === 'deepseek/deepseek-chat') return { id: 'deepseek/deepseek-chat', cliArg: 'deepseek/deepseek-chat', displayLabel: 'DeepSeek Chat', badge: 'deepseek' }
+  }
+
+  // Predefined models for agy
+  if (agentId === 'agy') {
+    if (modelId === 'gemini-3.8-flash-high') return { id: 'gemini-3.8-flash-high', cliArg: 'gemini-3.8-flash-high', displayLabel: 'Gemini 3.8 Flash (High)', badge: 'Google' }
+    if (modelId === 'gemini-3.8-flash-medium') return { id: 'gemini-3.8-flash-medium', cliArg: 'gemini-3.8-flash-medium', displayLabel: 'Gemini 3.8 Flash (Med)', badge: 'Google' }
+    if (modelId === 'gemini-3.8-flash-low') return { id: 'gemini-3.8-flash-low', cliArg: 'gemini-3.8-flash-low', displayLabel: 'Gemini 3.8 Flash (Low)', badge: 'Google' }
+    if (modelId === 'gemini-3.8-pro') return { id: 'gemini-3.8-pro', cliArg: 'gemini-3.8-pro', displayLabel: 'Gemini 3.8 Pro', badge: 'Google' }
+    if (modelId === 'claude-sonnet-4-6') return { id: 'claude-sonnet-4-6', cliArg: 'claude-sonnet-4-6', displayLabel: 'Claude Sonnet 4.6 (Thinking)', badge: 'Anthropic' }
+    if (modelId === 'claude-opus-4-6-thinking') return { id: 'claude-opus-4-6-thinking', cliArg: 'claude-opus-4-6-thinking', displayLabel: 'Claude Opus 4.6 (Thinking)', badge: 'Anthropic' }
+    if (modelId === 'gpt-oss-120b-medium') return { id: 'gpt-oss-120b-medium', cliArg: 'gpt-oss-120b-medium', displayLabel: 'GPT-OSS 120B (Medium)', badge: 'OpenAI' }
+  }
+
+  // Predefined models for claude
+  if (agentId === 'claude') {
+    if (modelId === 'sonnet') return { id: 'sonnet', cliArg: 'sonnet', displayLabel: 'Claude 3.7 Sonnet', badge: 'Anthropic' }
+    if (modelId === 'opus') return { id: 'opus', cliArg: 'opus', displayLabel: 'Claude 3.5 Opus', badge: 'Anthropic' }
+    if (modelId === 'haiku') return { id: 'haiku', cliArg: 'haiku', displayLabel: 'Claude 3.5 Haiku', badge: 'Anthropic' }
+  }
+
+  // Predefined models for codex
+  if (agentId === 'codex') {
+    if (modelId === 'gpt-4o') return { id: 'gpt-4o', cliArg: 'gpt-4o', displayLabel: 'GPT-4o', badge: 'OpenAI' }
+    if (modelId === 'o3-mini') return { id: 'o3-mini', cliArg: 'o3-mini', displayLabel: 'o3-mini', badge: 'OpenAI' }
+  }
+
+  if (byokChoice) {
+    return parseCliModel(agentId, 'byok', byokChoice)
+  }
+  return { id: modelId, cliArg: modelId, displayLabel: modelId }
+}
+
+interface CliModelOption {
+  readonly id: string
+  readonly label: string
+  readonly badge?: string | undefined
+  readonly desc?: string | undefined
+  readonly isParsedByok?: boolean | undefined
+}
+
+function getAvailableCliModels(
+  agentId: string,
+  byokChoice?: { providerId: string; modelId: string; modelName?: string },
+): readonly CliModelOption[] {
+  const byokParsed = parseCliModel(agentId, 'byok', byokChoice)
+  const list: CliModelOption[] = [
+    {
+      id: 'byok',
+      label: byokChoice ? `Gunakan Model BYOK: ${byokChoice.modelName || byokChoice.modelId}` : 'Gunakan Model BYOK',
+      badge: 'Parsed ke CLI',
+      desc: byokChoice ? `--model ${byokParsed.cliArg}` : undefined,
+      isParsedByok: true,
+    },
+  ]
+
+  if (agentId === 'opencode') {
+    list.push(
+      { id: 'opencode-go', label: 'OpenCode Go', badge: 'Official', desc: 'API Khusus OpenCode Go' },
+      { id: 'opencode', label: 'OpenCode Console', badge: 'Console', desc: 'Akun / Service Account' },
+      { id: 'openai/gpt-4o', label: 'OpenAI GPT-4o', badge: 'openai', desc: '--model openai/gpt-4o' },
+      { id: 'anthropic/claude-3-5-sonnet', label: 'Claude 3.5 Sonnet', badge: 'anthropic', desc: '--model anthropic/claude-3-5-sonnet' },
+      { id: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro', badge: 'google', desc: '--model google/gemini-2.5-pro' },
+      { id: 'default', label: 'Default Model (CLI Auto)', badge: 'CLI' },
+    )
+  } else if (agentId === 'agy') {
+    list.push(
+      { id: 'gemini-3.8-flash-high', label: 'Gemini 3.8 Flash (High)', badge: 'Google', desc: '--model gemini-3.8-flash-high' },
+      { id: 'gemini-3.8-flash-medium', label: 'Gemini 3.8 Flash (Med)', badge: 'Google', desc: '--model gemini-3.8-flash-medium' },
+      { id: 'gemini-3.8-flash-low', label: 'Gemini 3.8 Flash (Low)', badge: 'Google', desc: '--model gemini-3.8-flash-low' },
+      { id: 'gemini-3.8-pro', label: 'Gemini 3.8 Pro', badge: 'Google', desc: '--model gemini-3.8-pro' },
+      { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Thinking)', badge: 'Anthropic', desc: '--model claude-sonnet-4-6' },
+      { id: 'claude-opus-4-6-thinking', label: 'Claude Opus 4.6 (Thinking)', badge: 'Anthropic', desc: '--model claude-opus-4-6-thinking' },
+      { id: 'gpt-oss-120b-medium', label: 'GPT-OSS 120B (Medium)', badge: 'OpenAI', desc: '--model gpt-oss-120b-medium' },
+      { id: 'default', label: 'Default Model (dari CLI)', badge: 'CLI' },
+    )
+  } else if (agentId === 'claude') {
+    list.push(
+      { id: 'sonnet', label: 'Claude 3.7 Sonnet', badge: 'Anthropic', desc: '--model sonnet' },
+      { id: 'opus', label: 'Claude 3.5 Opus', badge: 'Anthropic', desc: '--model opus' },
+      { id: 'haiku', label: 'Claude 3.5 Haiku', badge: 'Anthropic', desc: '--model haiku' },
+      { id: 'default', label: 'Default (Claude Sonnet 3.7)', badge: 'CLI' },
+    )
+  } else if (agentId === 'codex') {
+    list.push(
+      { id: 'gpt-4o', label: 'GPT-4o', badge: 'OpenAI', desc: '--model gpt-4o' },
+      { id: 'o3-mini', label: 'o3-mini', badge: 'OpenAI', desc: '--model o3-mini' },
+      { id: 'default', label: 'Default Codex', badge: 'CLI' },
+    )
+  } else {
+    list.push({ id: 'default', label: 'Default Model (dari CLI)', badge: 'CLI' })
+  }
+
+  return list
+}
 
 /**
  * Render the composer model seat.
@@ -92,6 +316,103 @@ export function ModelSelect(
   const [menuPos, setMenuPos] = useState<CSSProperties | null>(null)
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
   const id = useId()
+
+  const [cliAgents, setCliAgents] = useState<readonly CliAgentInfo[]>(DEFAULT_CLI_AGENTS)
+  const [activeCliAgent, setActiveCliAgent] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('dsh_active_cli_agent')
+    } catch {
+      return null
+    }
+  })
+  const [activeTab, setActiveTab] = useState<'cli' | 'byok'>(() => {
+    try {
+      const stored = localStorage.getItem('dsh_model_mode')
+      return stored === 'byok' ? 'byok' : 'cli'
+    } catch {
+      return 'cli'
+    }
+  })
+  const [activeCliModel, setActiveCliModel] = useState<string>(() => {
+    try {
+      return localStorage.getItem('dsh_active_cli_model') || 'byok'
+    } catch {
+      return 'byok'
+    }
+  })
+  const [showAgentSettingsModal, setShowAgentSettingsModal] = useState(false)
+
+  useEffect(() => {
+    let mounted = true
+    if (typeof fetch === 'function') {
+      fetch('/api/agent-runner/agents')
+        .then(async (res): Promise<AgentListApiResponse | undefined> => {
+          if (!res.ok) return undefined
+          return (await res.json()) as AgentListApiResponse
+        })
+        .then((data) => {
+          if (mounted && data?.ok === true && Array.isArray(data.agents) && data.agents.length > 0) {
+            const list: readonly CliAgentInfo[] = data.agents
+            setCliAgents(list)
+            setActiveCliAgent((prev) => {
+              if (prev !== null) return prev
+              const stored = localStorage.getItem('dsh_active_cli_agent')
+              const fallback: string = list[0]?.id ?? 'agy'
+              return stored !== null && stored.length > 0 ? stored : fallback
+            })
+          }
+        })
+        .catch(() => {})
+    }
+    const handleCliChanged = (event: Event) => {
+      const custom = event as CustomEvent<{ agent: string }>
+      if (custom.detail.agent) {
+        setActiveCliAgent(custom.detail.agent)
+      }
+    }
+    const handleCliModelChanged = (event: Event) => {
+      const custom = event as CustomEvent<{ model: string }>
+      if (custom.detail.model) {
+        setActiveCliModel(custom.detail.model)
+      }
+    }
+    const handleModeChanged = (event: Event) => {
+      const custom = event as CustomEvent<{ mode: 'cli' | 'byok' }>
+      setActiveTab(custom.detail.mode)
+    }
+    window.addEventListener('dsh:agent-cli-changed', handleCliChanged)
+    window.addEventListener('dsh:agent-cli-model-changed', handleCliModelChanged)
+    window.addEventListener('dsh:model-mode-changed', handleModeChanged)
+    return () => {
+      mounted = false
+      window.removeEventListener('dsh:agent-cli-changed', handleCliChanged)
+      window.removeEventListener('dsh:agent-cli-model-changed', handleCliModelChanged)
+      window.removeEventListener('dsh:model-mode-changed', handleModeChanged)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (state.current) {
+      const cliProviders = ['agy', 'opencode', 'claude', 'codex', 'cursor-agent']
+      if (cliProviders.includes(state.current.provider)) {
+        setActiveTab('cli')
+        setActiveCliAgent(state.current.provider)
+        setActiveCliModel(state.current.model)
+        try {
+          localStorage.setItem('dsh_model_mode', 'cli')
+          localStorage.setItem('dsh_active_cli_agent', state.current.provider)
+          localStorage.setItem('dsh_active_cli_model', state.current.model)
+        } catch {}
+      }
+    }
+  }, [state.current])
+
+  const activeAgent = activeCliAgent !== null ? cliAgents.find(a => a.id === activeCliAgent) : undefined
+
+  const openCliSettings = (): void => {
+    setOpen(false)
+    setShowAgentSettingsModal(true)
+  }
 
   const accountProviderName = t('provider.account')
   const groups = useMemo(() => orderModelProviders(state.groups).map(group => ({
@@ -156,6 +477,62 @@ export function ModelSelect(
     load()
   }
 
+  const chooseCliAgent = (agentId: string, shouldClose = false): void => {
+    setActiveCliAgent(agentId)
+    setActiveTab('cli')
+    let nextModel = activeCliModel
+    try {
+      localStorage.setItem('dsh_active_cli_agent', agentId)
+      localStorage.setItem('dsh_model_mode', 'cli')
+      const byok = currentChoice ? {
+        providerId: currentChoice.group.provider.id,
+        modelId: currentChoice.model.id,
+        modelName: currentChoice.model.name,
+      } : undefined
+      const availableModels = getAvailableCliModels(agentId, byok)
+      const isModelValid = availableModels.some(m => m.id === activeCliModel)
+      nextModel = isModelValid ? activeCliModel : (agentId === 'agy' ? 'gemini-3.8-flash-high' : 'byok')
+      if (!isModelValid) {
+        setActiveCliModel(nextModel)
+        localStorage.setItem('dsh_active_cli_model', nextModel)
+      }
+      const parsed = parseCliModel(agentId, nextModel, byok)
+      localStorage.setItem('dsh_active_cli_model_arg', parsed.cliArg)
+      window.dispatchEvent(new CustomEvent('dsh:agent-cli-changed', { detail: { agent: agentId } }))
+      window.dispatchEvent(new CustomEvent('dsh:model-mode-changed', { detail: { mode: 'cli' } }))
+    } catch {}
+    submit({
+      provider: agentId,
+      model: nextModel || 'byok',
+    })
+    if (shouldClose) {
+      closeAfterSelection()
+    }
+  }
+
+  const chooseCliModel = (modelId: string): void => {
+    setActiveCliModel(modelId)
+    const agentId = activeCliAgent || 'agy'
+    try {
+      localStorage.setItem('dsh_active_cli_model', modelId)
+      const byok = currentChoice ? {
+        providerId: currentChoice.group.provider.id,
+        modelId: currentChoice.model.id,
+        modelName: currentChoice.model.name,
+      } : undefined
+      const parsed = parseCliModel(agentId, modelId, byok)
+      localStorage.setItem('dsh_active_cli_model_arg', parsed.cliArg)
+      window.dispatchEvent(new CustomEvent('dsh:agent-cli-model-changed', {
+        detail: { agent: agentId, model: modelId, cliArg: parsed.cliArg },
+      }))
+    } catch {}
+    submit({
+      provider: agentId,
+      model: modelId,
+    })
+    closeAfterSelection()
+  }
+
   useEffect(() => {
     if (!open) return
     const closeOutside = (event: MouseEvent): void => {
@@ -177,7 +554,7 @@ export function ModelSelect(
 
   // Pane switches unmount the focused row; restore focus inside the menu so
   // keyboard navigation remains available.
-  const paneFocus = useRef<'drill' | 'model' | 'effort' | null>(null)
+  const paneFocus = useRef<'drill' | 'model' | 'effort' | 'agent-cli' | null>(null)
   const previousShowSearch = useRef(showSearch)
   useEffect(() => {
     const changedSearchMode = previousShowSearch.current !== showSearch
@@ -199,7 +576,8 @@ export function ModelSelect(
       ;(target ?? triggerRef.current)?.focus()
       return
     }
-    const cell = itemRefs.current[intent === 'effort' ? 1 : 0]
+    const agentCliIndex = reasoning !== undefined ? 2 : 1
+    const cell = itemRefs.current[intent === 'effort' ? 1 : intent === 'agent-cli' ? agentCliIndex : 0]
     ;(cell !== null && cell !== undefined && !cell.disabled ? cell : triggerRef.current)?.focus()
   }, [open, pane, showSearch])
 
@@ -286,6 +664,11 @@ export function ModelSelect(
   /** Leave a drilled pane for the root one, handing the keyboard back to its cell. */
   const back = (from: Exclude<Pane, 'root'>): void => {
     paneFocus.current = from
+    if (from === 'model' || from === 'effort') {
+      setActiveTab('byok')
+    } else {
+      setActiveTab('cli')
+    }
     setPane('root')
   }
 
@@ -400,6 +783,11 @@ export function ModelSelect(
   }
 
   const choose = (selection: ModelSelection): void => {
+    setActiveTab('byok')
+    try {
+      localStorage.setItem('dsh_model_mode', 'byok')
+      window.dispatchEvent(new CustomEvent('dsh:model-mode-changed', { detail: { mode: 'byok' } }))
+    } catch {}
     if (state.current?.provider === selection.provider && state.current.model === selection.model) {
       closeAfterSelection()
       return
@@ -426,7 +814,16 @@ export function ModelSelect(
     ? t('trigger.loading')
     : currentChoice?.model.name
       ?? t('trigger.fallback')
-  const triggerLabel = effortLabel === undefined ? modelLabel : `${modelLabel} · ${effortLabel}`
+  const currentCliParsed = cliAgents.length > 0 && activeTab === 'cli' && activeAgent !== undefined
+    ? parseCliModel(activeAgent.id, activeCliModel, currentChoice ? {
+      providerId: currentChoice.group.provider.id,
+      modelId: currentChoice.model.id,
+      modelName: currentChoice.model.name,
+    } : undefined)
+    : undefined
+  const triggerLabel = currentCliParsed !== undefined
+    ? `CLI · ${activeAgent?.name ?? activeCliAgent}: ${currentCliParsed.displayLabel}`
+    : effortLabel === undefined ? modelLabel : `${modelLabel} · ${effortLabel}`
   const triggerAria = waiting
     ? t('trigger.loading')
     : currentChoice === undefined
@@ -492,10 +889,25 @@ export function ModelSelect(
         }}
       >
         <IconDataOutlineRegular className={css.triggerIcon} size={16} />
+        {cliAgents.length > 0 && (
+          activeTab === 'cli' && activeAgent !== undefined ? (
+            <span className={css.cliTriggerBadge}>
+              CLI · {activeAgent.bin.toUpperCase()}
+            </span>
+          ) : (
+            <span className={css.byokTriggerBadge}>
+              BYOK
+            </span>
+          )
+        )}
         <span className={css.triggerLabel}>
-          {currentChoice === undefined ? modelLabel : renderModelLabel(currentChoice.group.provider, currentChoice.model, 'trigger', true)}
+          {currentCliParsed !== undefined
+            ? currentCliParsed.displayLabel
+            : currentChoice === undefined
+              ? modelLabel
+              : renderModelLabel(currentChoice.group.provider, currentChoice.model, 'trigger', true)}
         </span>
-        {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
+        {currentCliParsed === undefined && effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
         {busy
           ? <StateDot state="ongoing" />
           : <IconChevronDownOutlineRegular className={clsx(css.chevron, open && css.chevronOpen)} />}
@@ -516,19 +928,157 @@ export function ModelSelect(
         >
           {pane === 'root' && (
             <>
-              <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { drill('model') }}>
-                <span className={css.cellLabel}>{t('menu.model')}</span>
-                <span className={css.cellValue}>
-                  {currentChoice === undefined ? modelLabel : renderModelLabel(currentChoice.group.provider, currentChoice.model, 'menu', true)}
-                </span>
-                <IconChevronRightOutlineRegular className={css.cellChevron} />
-              </button>
-              {reasoning !== undefined && (
-                <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { drill('effort') }}>
-                  <span className={css.cellLabel}>{t('menu.effort')}</span>
-                  <span className={css.cellValue}>{effortLabel}</span>
-                  <IconChevronRightOutlineRegular className={css.cellChevron} />
-                </button>
+              {cliAgents.length > 0 && (
+                <div className={css.tabSplit}>
+                  <button
+                    type="button"
+                    className={clsx(css.tabSplitBtn, activeTab === 'cli' && css.tabSplitBtnActive)}
+                    onClick={() => {
+                      setActiveTab('cli')
+                      const agentId = activeCliAgent || 'agy'
+                      const modelId = activeCliModel || 'gemini-3.8-flash-high'
+                      try {
+                        localStorage.setItem('dsh_model_mode', 'cli')
+                        window.dispatchEvent(new CustomEvent('dsh:model-mode-changed', { detail: { mode: 'cli' } }))
+                      } catch {}
+                      submit({
+                        provider: agentId,
+                        model: modelId,
+                      })
+                    }}
+                  >
+                    <IconCodeOutlineRegular size={13} />
+                    <span>Agent CLI</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={clsx(css.tabSplitBtn, activeTab === 'byok' && css.tabSplitBtnActive)}
+                    onClick={() => {
+                      setActiveTab('byok')
+                      try {
+                        localStorage.setItem('dsh_model_mode', 'byok')
+                        window.dispatchEvent(new CustomEvent('dsh:model-mode-changed', { detail: { mode: 'byok' } }))
+                      } catch {}
+                      if (currentChoice && !['agy', 'opencode', 'claude', 'codex', 'cursor-agent'].includes(currentChoice.group.provider.id)) {
+                        submit({
+                          provider: currentChoice.group.provider.id,
+                          model: currentChoice.model.id,
+                          ...(currentChoice.model.reasoning?.defaultEffort === undefined
+                            ? {}
+                            : { reasoningEffort: currentChoice.model.reasoning.defaultEffort }),
+                        })
+                      }
+                    }}
+                  >
+                    <IconDataOutlineRegular size={13} />
+                    <span>BYOK</span>
+                  </button>
+                </div>
+              )}
+
+              {activeTab === 'byok' || cliAgents.length === 0 ? (
+                <>
+                  <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { drill('model') }}>
+                    <span className={css.cellLabel}>{t('menu.model')}</span>
+                    <span className={css.cellValue}>
+                      {currentChoice === undefined ? modelLabel : renderModelLabel(currentChoice.group.provider, currentChoice.model, 'menu', true)}
+                    </span>
+                    <IconChevronRightOutlineRegular className={css.cellChevron} />
+                  </button>
+                  {reasoning !== undefined && (
+                    <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { drill('effort') }}>
+                      <span className={css.cellLabel}>{t('menu.effort')}</span>
+                      <span className={css.cellValue}>{effortLabel}</span>
+                      <IconChevronRightOutlineRegular className={css.cellChevron} />
+                    </button>
+                  )}
+                </>
+              ) : (
+                <div className={css.cliPane}>
+                  <div className={clsx(css.cliList, 'scrollable')}>
+                    {cliAgents.map((agent) => {
+                      const selected = agent.id === activeCliAgent
+                      return (
+                        <button
+                          key={agent.id}
+                          ref={itemRef()}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={selected}
+                          className={clsx(css.option, selected && css.selected)}
+                          onClick={() => { chooseCliAgent(agent.id, selected) }}
+                        >
+                          <span className={css.optionCopy}>
+                            <span className={css.cliNameRow}>
+                              <span className={css.modelName}>{agent.name}</span>
+                              <span className={css.cliBadge}>{agent.bin}</span>
+                            </span>
+                            {agent.version && <span className={css.cliMeta}>{agent.version}</span>}
+                          </span>
+                          <span className={css.check}>
+                            {selected ? <IconCheckOutlineRegular /> : null}
+                          </span>
+                        </button>
+                      )
+                    })}
+
+                    {activeAgent !== undefined && (
+                      <>
+                        <div className={css.cliSectionDivider}>
+                          <div className={css.cliSectionTitle}>
+                            Penyedia LLM / Model CLI ({activeAgent.bin})
+                          </div>
+                        </div>
+                        {getAvailableCliModels(
+                          activeAgent.id,
+                          currentChoice ? {
+                            providerId: currentChoice.group.provider.id,
+                            modelId: currentChoice.model.id,
+                            modelName: currentChoice.model.name,
+                          } : undefined,
+                        ).map((m) => {
+                          const isSelected = activeCliModel === m.id
+                          return (
+                            <button
+                              key={m.id}
+                              ref={itemRef()}
+                              type="button"
+                              role="menuitemradio"
+                              aria-checked={isSelected}
+                              className={clsx(css.option, isSelected && css.selected)}
+                              onClick={() => { chooseCliModel(m.id) }}
+                            >
+                              <span className={css.optionCopy}>
+                                <span className={css.cliNameRow}>
+                                  <span className={css.modelName}>{m.label}</span>
+                                  {m.badge && (
+                                    <span className={clsx(css.cliModelBadge, m.isParsedByok && css.cliModelBadgeParsed)}>
+                                      {m.badge}
+                                    </span>
+                                  )}
+                                </span>
+                                {m.desc && <span className={css.cliModelDesc}>{m.desc}</span>}
+                              </span>
+                              <span className={css.check}>
+                                {isSelected ? <IconCheckOutlineRegular /> : null}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </>
+                    )}
+                  </div>
+                  <div className={css.cliSettingsFooter}>
+                    <button
+                      type="button"
+                      className={css.cliSettingsBtn}
+                      onClick={openCliSettings}
+                    >
+                      <IconSettingsOutlineRegular size={14} />
+                      <span>Pengaturan CLI (Agent Runner)...</span>
+                    </button>
+                  </div>
+                </div>
               )}
             </>
           )}
@@ -670,7 +1220,149 @@ export function ModelSelect(
                 ))}
             </>
           )}
+
+          {pane === 'agent-cli' && (
+            <div className={css.cliPane}>
+              <div className={css.cliPaneHeader}>
+                <button
+                  type="button"
+                  className={css.cliBackBtn}
+                  aria-label="Kembali"
+                  onClick={() => { back('agent-cli') }}
+                >
+                  <IconChevronLeftOutlineRegular size={14} />
+                </button>
+                <span className={css.cliPaneTitle}>Pilih Agent CLI</span>
+              </div>
+              <div className={clsx(css.cliList, 'scrollable')}>
+                {cliAgents.map((agent) => {
+                  const selected = agent.id === activeCliAgent
+                  return (
+                    <button
+                      key={agent.id}
+                      ref={itemRef()}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={selected}
+                      className={clsx(css.option, selected && css.selected)}
+                      onClick={() => { chooseCliAgent(agent.id, selected) }}
+                    >
+                      <span className={css.optionCopy}>
+                        <span className={css.cliNameRow}>
+                          <span className={css.modelName}>{agent.name}</span>
+                          <span className={css.cliBadge}>{agent.bin}</span>
+                        </span>
+                        {agent.version && <span className={css.cliMeta}>{agent.version}</span>}
+                      </span>
+                      <span className={css.check}>
+                        {selected ? <IconCheckOutlineRegular /> : null}
+                      </span>
+                    </button>
+                  )
+                })}
+
+                {activeAgent !== undefined && (
+                  <>
+                    <div className={css.cliSectionDivider}>
+                      <div className={css.cliSectionTitle}>
+                        Penyedia LLM / Model CLI ({activeAgent.bin})
+                      </div>
+                    </div>
+                    {getAvailableCliModels(
+                      activeAgent.id,
+                      currentChoice ? {
+                        providerId: currentChoice.group.provider.id,
+                        modelId: currentChoice.model.id,
+                        modelName: currentChoice.model.name,
+                      } : undefined,
+                    ).map((m) => {
+                      const isSelected = activeCliModel === m.id
+                      return (
+                        <button
+                          key={m.id}
+                          ref={itemRef()}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={isSelected}
+                          className={clsx(css.option, isSelected && css.selected)}
+                          onClick={() => { chooseCliModel(m.id) }}
+                        >
+                          <span className={css.optionCopy}>
+                            <span className={css.cliNameRow}>
+                              <span className={css.modelName}>{m.label}</span>
+                              {m.badge && (
+                                <span className={clsx(css.cliModelBadge, m.isParsedByok && css.cliModelBadgeParsed)}>
+                                  {m.badge}
+                                </span>
+                              )}
+                            </span>
+                            {m.desc && <span className={css.cliModelDesc}>{m.desc}</span>}
+                          </span>
+                          <span className={css.check}>
+                            {isSelected ? <IconCheckOutlineRegular /> : null}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </>
+                )}
+              </div>
+              <div className={css.cliSettingsFooter}>
+                <button
+                  type="button"
+                  className={css.cliSettingsBtn}
+                  onClick={openCliSettings}
+                >
+                  <IconSettingsOutlineRegular size={14} />
+                  <span>Pengaturan CLI (Agent Runner)...</span>
+                </button>
+              </div>
+            </div>
+          )}
         </MenuSurface>,
+        document.body,
+      )}
+      {showAgentSettingsModal && createPortal(
+        <div
+          className={css.agentModalOverlay}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Pengaturan Agent CLI"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowAgentSettingsModal(false)
+          }}
+        >
+          <div className={css.agentModalCard}>
+            <div className={css.agentModalHeader}>
+              <div className={css.agentModalTitleGroup}>
+                <span className={css.agentModalIcon}>
+                  <IconSettingsOutlineRegular size={18} />
+                </span>
+                <div>
+                  <h2 className={css.agentModalTitle}>Pengaturan Agent CLI</h2>
+                  <p className={css.agentModalSubtitle}>
+                    Kelola autentikasi, akun login, dan konfigurasi CLI runner ({activeAgent?.name ?? activeCliAgent})
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className={css.agentModalClose}
+                aria-label="Tutup"
+                onClick={() => { setShowAgentSettingsModal(false) }}
+              >
+                <IconCloseFillRegular size={16} />
+              </button>
+            </div>
+            <div className={css.agentModalBody}>
+              <iframe
+                src="/api/agent-runner/ui"
+                title="Agent Runner Settings"
+                className={css.agentModalIframe}
+              />
+            </div>
+          </div>
+        </div>,
         document.body,
       )}
       {toast !== null && (

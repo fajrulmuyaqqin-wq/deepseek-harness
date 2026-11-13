@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { MessageId } from '@deepseek-ai/dsh-llm'
+import type { MessageId, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { foldSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import { errorMessage, TeamError } from './error.ts'
@@ -136,7 +136,7 @@ export class TeamRoster {
     }]
     for (const member of state.members) {
       const live = this.ctx.agents.get(member.id)
-      const model = live?.options.model ?? root.options.model
+      const model = member.model ?? live?.options.model ?? root.options.model
       result.push({
         id: member.id,
         name: member.name,
@@ -150,6 +150,8 @@ export class TeamRoster {
         provider: member.provider,
         context: member.context,
         ...model === undefined ? {} : { model },
+        ...member.modelProvider === undefined ? {} : { modelProvider: member.modelProvider },
+        ...member.mcpServers === undefined ? {} : { mcpServers: [...member.mcpServers] },
         diagnostics: member.error === undefined ? [] : [member.error],
       })
     }
@@ -247,6 +249,9 @@ export class TeamRoster {
       provider: requiredText(request.provider, 'provider', 200),
       context: request.context,
       phase: 'provisioning',
+      ...request.model === undefined ? {} : { model: requiredText(request.model, 'model', 128) },
+      ...request.modelProvider === undefined ? {} : { modelProvider: requiredText(request.modelProvider, 'modelProvider', 64) },
+      ...request.mcpServers === undefined ? {} : { mcpServers: [...new Set(request.mcpServers.map(s => requiredText(s, 'mcpServers', 64)))] },
     }
 
     await this.journal.transact(root.id, async () => {
@@ -261,6 +266,11 @@ export class TeamRoster {
     })
 
     try {
+      const agentOptions = {
+        ...request.modelProvider !== undefined ? { provider: request.modelProvider } : {},
+        ...request.model !== undefined ? { model: request.model } : {},
+        ...request.reasoningEffort !== undefined ? { reasoningEffort: request.reasoningEffort as ReasoningEffortId } : {},
+      }
       const started = await this.ctx.subagents.startActivation({
         delivery: 'parent',
         childId,
@@ -269,9 +279,16 @@ export class TeamRoster {
         request: {
           prompt: request.prompt,
           parent: root,
+          ...(Object.keys(agentOptions).length > 0 ? { agentOptions } : {}),
         },
         signal,
       })
+      if (request.mcpServers !== undefined && request.mcpServers.length > 0) {
+        const liveChild = this.ctx.agents.get(childId)
+        if (liveChild !== undefined) {
+          this.applyMcpRestrictions(liveChild, request.mcpServers)
+        }
+      }
       await this.checkpointInitialPrompt(childId, started.messageId, signal)
     } catch (error: unknown) {
       const failed: TeamMemberSnapshot = {
@@ -358,7 +375,6 @@ export class TeamRoster {
       try {
         signal.throwIfAborted()
         await this.ctx.sessions.flush(session)
-        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         const suffix = session.snapshotEvents(session.inheritedEventCount)
         if (messageAccepted(suffix, message => message.id === messageId)) return
         if (this.ctx.sessions.get(childId) !== session) continue
@@ -419,6 +435,7 @@ export class TeamRoster {
   /** Build one runtime member row after successful creation. */
   private memberView(member: TeamMemberSnapshot & { readonly phase: 'active' }): TeamMemberView {
     const live = this.ctx.agents.get(member.id)
+    const model = member.model ?? live?.options.model
     return {
       id: member.id,
       name: member.name,
@@ -427,8 +444,30 @@ export class TeamRoster {
       description: member.description,
       provider: member.provider,
       context: member.context,
-      ...live?.options.model === undefined ? {} : { model: live.options.model },
+      ...model === undefined ? {} : { model },
+      ...member.modelProvider === undefined ? {} : { modelProvider: member.modelProvider },
+      ...member.mcpServers === undefined ? {} : { mcpServers: [...member.mcpServers] },
       diagnostics: [],
+    }
+  }
+
+  /** Apply MCP tool restrictions to a child agent scope. */
+  private applyMcpRestrictions(agent: Agent, allowedServers: readonly string[]): void {
+    const toolsService = this.ctx.get('tools')
+    if (toolsService === undefined) return
+    const allowedSet = new Set(allowedServers)
+    const mcpPattern = /^mcp__([A-Za-z0-9_-]+)__/u
+    const allTools = toolsService.schemas(agent)
+    const toDeny: string[] = []
+    for (const tool of allTools) {
+      const match = mcpPattern.exec(tool.name)
+      const serverName = match?.[1]
+      if (serverName !== undefined && !allowedSet.has(serverName)) {
+        toDeny.push(tool.name)
+      }
+    }
+    if (toDeny.length > 0) {
+      agent.ctx.tools.restrict({ deny: toDeny })
     }
   }
 
@@ -466,7 +505,6 @@ export class TeamRoster {
 
   /** Whether a Session's own suffix identifies a provider-owned subagent child. */
   private subagentDescriptor(agent: Agent): boolean {
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     return foldSubagentDescriptor(agent.session.snapshotEvents(agent.session.inheritedEventCount)) !== undefined
   }
 }

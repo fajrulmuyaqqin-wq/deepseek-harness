@@ -72,6 +72,9 @@ const teamMemberSnapshotSchema = z.object({
   context: z.enum(['fresh', 'fork']),
   phase: z.enum(['provisioning', 'active', 'failed']),
   error: z.string().optional(),
+  model: z.string().optional(),
+  modelProvider: z.string().optional(),
+  mcpServers: z.array(z.string()).optional(),
 }).strict() as z.ZodType<TeamMemberSnapshot>
 
 const teamTaskSnapshotSchema = z.object({
@@ -83,6 +86,12 @@ const teamTaskSnapshotSchema = z.object({
   ownerId: sessionIdSchema.optional(),
   blockedBy: z.array(teamTaskIdSchema),
   writeScopes: z.array(z.string()),
+  provider: z.string().optional(),
+  model: z.string().optional(),
+  reasoningEffort: z.string().optional(),
+  mcpServers: z.array(z.string()).optional(),
+  assignedTo: z.string().optional(),
+  staged: z.boolean().optional(),
 }).strict() as z.ZodType<TeamTaskSnapshot>
 
 const teamMessageSnapshotSchema = z.object({
@@ -309,6 +318,9 @@ const teamMemberProjectionSchema = z.object({
   role: z.enum(['lead', 'teammate']),
   phase: z.enum(['provisioning', 'active', 'failed']),
   error: z.string().optional(),
+  model: z.string().optional(),
+  modelProvider: z.string().optional(),
+  mcpServers: z.array(z.string()).optional(),
 }).strict() as z.ZodType<TeamMemberProjection>
 
 const teamTaskViewSchema = z.object({
@@ -322,6 +334,12 @@ const teamTaskViewSchema = z.object({
   ownerName: z.string().optional(),
   ready: z.boolean(),
   writeScopeWarnings: z.array(z.string()),
+  provider: z.string().optional(),
+  model: z.string().optional(),
+  reasoningEffort: z.string().optional(),
+  mcpServers: z.array(z.string()).optional(),
+  assignedTo: z.string().optional(),
+  staged: z.boolean().optional(),
 }).strict() as z.ZodType<TeamTaskView>
 
 const teamProjectionSchema = z.object({
@@ -343,6 +361,9 @@ function buildTeamProjection(state: TeamProjectionState): TeamProjection {
       role: 'teammate',
       phase: member.phase,
       ...member.error === undefined ? {} : { error: member.error },
+      ...member.model === undefined ? {} : { model: member.model },
+      ...member.modelProvider === undefined ? {} : { modelProvider: member.modelProvider },
+      ...member.mcpServers === undefined ? {} : { mcpServers: member.mcpServers },
     })
   }
   return {

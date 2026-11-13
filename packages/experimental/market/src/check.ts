@@ -221,6 +221,19 @@ export interface DuplicateName {
   count: number
 }
 
+/**
+ * Plugin loader names that are multi-instance or declarative by contract.
+ * Multiple rows with these names across different layers (official bundles,
+ * community bundles, user patches) contribute distinct entities (such as
+ * agent presets or MCP clients) rather than shadowing each other at runtime.
+ */
+export const MULTI_INSTANCE_LOADER_NAMES: ReadonlySet<string> = new Set([
+  '@deepseek-ai/dsh-agent-preset',
+  '@deepseek-ai/dsh-mcp-client',
+  '@deepseek-ai/dsh-tool-subagent',
+  'cordis:group',
+])
+
 /** Distinct resolved versions of one core package found in the lockfile. */
 export interface MultiVersion {
   name: string
@@ -1425,7 +1438,7 @@ export function analyzeProfile(profileDirectory: string, options: CheckOptions =
       // Peer checks cover EVERY declared peer, not just host core packages:
       // plugin-to-plugin peer mismatches break runtime registration just as
       // hard (issue #98 optimization round).
-      const satisfied = resolved !== null ? satisfiesRange(resolved, spec) : null
+      const satisfied = resolved !== null ? satisfiesRange(resolved, spec, { includePrerelease: true }) : null
       const optional = pkg.peerDependenciesMeta?.[name]?.optional === true
       peerMismatches.push({
         plugin, name, range: spec, resolved,
@@ -1577,7 +1590,7 @@ export function analyzeProfile(profileDirectory: string, options: CheckOptions =
   // (report.duplicates), which fail the boot outright and are unchanged.
   const nameCounts = new Map<string, string[]>()
   for (const row of composed.rows) {
-    if (row.name === undefined) continue
+    if (row.name === undefined || MULTI_INSTANCE_LOADER_NAMES.has(row.name)) continue
     const layers = nameCounts.get(row.name) ?? []
     if (!layers.includes(row.layer)) layers.push(row.layer)
     nameCounts.set(row.name, layers)

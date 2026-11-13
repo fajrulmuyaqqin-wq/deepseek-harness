@@ -116,7 +116,14 @@ function spawn(
   ctx: Context,
   lead: Agent,
   name: string,
-  options: { context?: 'fresh' | 'fork'; provider?: string } = {},
+  options: {
+    context?: 'fresh' | 'fork'
+    provider?: string
+    modelProvider?: string
+    model?: string
+    reasoningEffort?: string
+    mcpServers?: string[]
+  } = {},
 ) {
   const context = options.context ?? 'fresh'
   return ctx.agentTeams.spawnTeammate(lead, {
@@ -125,6 +132,10 @@ function spawn(
     prompt: content(`${name} initial`),
     context,
     provider: options.provider ?? (context === 'fork' ? 'fork' : 'spawn'),
+    ...options.modelProvider !== undefined ? { modelProvider: options.modelProvider } : {},
+    ...options.model !== undefined ? { model: options.model } : {},
+    ...options.reasoningEffort !== undefined ? { reasoningEffort: options.reasoningEffort } : {},
+    ...options.mcpServers !== undefined ? { mcpServers: options.mcpServers } : {},
     signal: SIGNAL,
   })
 }
@@ -889,6 +900,72 @@ describe('Team shared task DAG', () => {
 
     ctx.agentTeams.interrupt(lead, 'editor')
     await waitNoAgent(ctx, editor.id)
+  })
+
+  it('supports staged tasks, dispatch action, model/provider assignment, and MCP scope', async () => {
+    const { ctx, lead } = await setup(['hang', 'hang'])
+    const member = await spawn(ctx, lead, 'worker', {
+      modelProvider: 'mock',
+      model: 'mock-model',
+      mcpServers: ['test-mcp'],
+    })
+    expect(member.member).toMatchObject({
+      name: 'worker',
+      model: 'mock-model',
+      modelProvider: 'mock',
+      mcpServers: ['test-mcp'],
+    })
+
+    const stagedTask = await ctx.agentTeams.createTask(lead, {
+      subject: 'staged architecture task',
+      description: 'drafting design',
+      provider: 'mock',
+      model: 'mock-model',
+      reasoningEffort: 'high',
+      mcpServers: ['test-mcp'],
+      assignedTo: 'worker',
+      staged: true,
+    })
+
+    expect(stagedTask).toMatchObject({
+      subject: 'staged architecture task',
+      provider: 'mock',
+      model: 'mock-model',
+      reasoningEffort: 'high',
+      mcpServers: ['test-mcp'],
+      assignedTo: 'worker',
+      staged: true,
+      ready: false,
+    })
+
+    // Staged task cannot be claimed
+    const worker = await waitRunning(ctx, member.member.id)
+    await expect(ctx.agentTeams.updateTask(worker, {
+      taskId: stagedTask.id,
+      expectedRevision: stagedTask.revision,
+      action: 'claim',
+    })).rejects.toMatchObject({ code: 'TEAM_TASK_BLOCKED' })
+
+    // Dispatch the task
+    const dispatched = await ctx.agentTeams.updateTask(lead, {
+      taskId: stagedTask.id,
+      expectedRevision: stagedTask.revision,
+      action: 'dispatch',
+    })
+    expect(dispatched.staged).toBe(false)
+    expect(dispatched.ready).toBe(true)
+
+    // Now it can be claimed
+    const claimed = await ctx.agentTeams.updateTask(worker, {
+      taskId: stagedTask.id,
+      expectedRevision: dispatched.revision,
+      action: 'claim',
+    })
+    expect(claimed.status).toBe('in_progress')
+    expect(claimed.ownerName).toBe('worker')
+
+    ctx.agentTeams.interrupt(lead, 'worker')
+    await waitNoAgent(ctx, worker.id)
   })
 })
 

@@ -53,6 +53,9 @@ export interface TeamMemberSnapshot {
   readonly context: 'fresh' | 'fork'
   readonly phase: TeamMemberPhase
   readonly error?: string
+  readonly model?: string
+  readonly modelProvider?: string
+  readonly mcpServers?: string[]
 }
 
 /** Current runtime-enriched roster row. */
@@ -65,6 +68,8 @@ export interface TeamMemberView {
   readonly provider?: string
   readonly context?: 'fresh' | 'fork'
   readonly model?: string
+  readonly modelProvider?: string
+  readonly mcpServers?: string[]
   readonly diagnostics: string[]
 }
 
@@ -81,6 +86,12 @@ export interface TeamTaskSnapshot {
   readonly ownerId?: SessionId
   readonly blockedBy: TeamTaskId[]
   readonly writeScopes: string[]
+  readonly provider?: string
+  readonly model?: string
+  readonly reasoningEffort?: string
+  readonly mcpServers?: string[]
+  readonly assignedTo?: string
+  readonly staged?: boolean
 }
 
 /** Runtime-enriched task view returned to tools and hosts. */
@@ -95,6 +106,12 @@ export interface TeamTaskView {
   readonly ownerName?: string
   readonly ready: boolean
   readonly writeScopeWarnings: string[]
+  readonly provider?: string
+  readonly model?: string
+  readonly reasoningEffort?: string
+  readonly mcpServers?: string[]
+  readonly assignedTo?: string
+  readonly staged?: boolean
 }
 
 /** One durable roster row published through the `agentTeam` Session projection. */
@@ -105,6 +122,9 @@ export interface TeamMemberProjection {
   /** Durable lifecycle; the Lead row is always `active`. Turn activity comes from Session status. */
   readonly phase: TeamMemberPhase
   readonly error?: string
+  readonly model?: string
+  readonly modelProvider?: string
+  readonly mcpServers?: string[]
 }
 
 /**
@@ -168,6 +188,10 @@ export interface SpawnTeammateRequest {
   readonly prompt: ContentBlock[]
   readonly context: 'fresh' | 'fork'
   readonly provider: string
+  readonly modelProvider?: string
+  readonly model?: string
+  readonly reasoningEffort?: string
+  readonly mcpServers?: readonly string[]
   readonly signal: AbortSignal
 }
 
@@ -194,6 +218,12 @@ export interface CreateTeamTaskRequest {
   readonly description: string
   readonly blockedBy?: readonly TeamTaskId[]
   readonly writeScopes?: readonly string[]
+  readonly provider?: string
+  readonly model?: string
+  readonly reasoningEffort?: string
+  readonly mcpServers?: readonly string[]
+  readonly assignedTo?: string
+  readonly staged?: boolean
 }
 
 /** Supported task mutation actions. */
@@ -205,6 +235,7 @@ export type TeamTaskAction =
   | 'complete'
   | 'reopen'
   | 'reassign'
+  | 'dispatch'
   | 'delete'
 
 /** Compare-and-set mutation of one shared task. */
@@ -217,6 +248,12 @@ export interface UpdateTeamTaskRequest {
   readonly blockedBy?: readonly TeamTaskId[]
   readonly writeScopes?: readonly string[]
   readonly owner?: string
+  readonly provider?: string
+  readonly model?: string
+  readonly reasoningEffort?: string
+  readonly mcpServers?: readonly string[]
+  readonly assignedTo?: string
+  readonly staged?: boolean
 }
 
 /** Result of waiting for Team activity. */

@@ -36,9 +36,11 @@ function teamPolicy(interrupt: boolean): string {
 
 The Team Lead and all teammates share the same working directory and filesystem. Edits are immediately visible to every member. Split write work into disjoint scopes, record expected write scopes on shared tasks, and use task dependencies when work must be ordered. Write-scope overlap is advisory, not a lock.
 
+Plan-first collaboration: When approaching non-trivial goals, start by designing the task breakdown using team_task_create. Assign appropriate LLM providers, models (e.g. claude-3-7-sonnet, gemini-2.5-pro, deepseek-chat), and specialized MCP servers for each task based on requirements, setting staged: true to allow human review. Once tasks are ready or dispatched, spawn required teammates with matching configurations and claim the tasks.
+
 Prefer read/edit/write for file changes. If a file operation returns FS_STALE_VERSION, read the current file, rebase your intended change onto the new content, and retry. Bash, formatters, code generators, and scripts are not fully protected by the filesystem version guard; coordinate them explicitly and have the Lead review the final diff and run tests.
 
-Use the target returned by spawn_teammate or list_agents for send_message${interrupt ? ' and interrupt_agent' : ''}, or as owner when assigning or filtering shared tasks. send_message steers a running target at its nearest step boundary and starts or resumes an inactive target. inactive means no turn is executing; it does not describe task completion, success, failure, or waiting for other agents. provisioning means member creation is in progress; failed means member creation failed. A peer message starts with its sender name. A successful send does not mean the recipient has processed it. Shared-task workflow is list, get, claim with the current revision, perform the work, then complete. Task readiness never starts an owner. Before wait_agent, use list_agents and make sure another required member is running or provisioning; use send_message first when the required member is inactive. wait_agent observes only changes after that call starts, never wakes a member, and returns noProgress immediately when no other member can produce a change. Re-list after wakeup or timeout. The Lead must wait for required teammates before giving the final answer.`
+Use the target returned by spawn_teammate or list_agents for send_message${interrupt ? ' and interrupt_agent' : ''}, or as owner when assigning or filtering shared tasks. send_message steers a running target at its nearest step boundary and starts or resumes an inactive target. inactive means no turn is executing; it does not describe task completion, success, failure, or waiting for other agents. provisioning means member creation is in progress; failed means member creation failed. A peer message starts with its sender name. A successful send does not mean the recipient has processed it. Shared-task workflow is list, get, claim with the current revision, perform the work, then complete. Staged tasks must be dispatched before claim. Task readiness never starts an owner. Before wait_agent, use list_agents and make sure another required member is running or provisioning; use send_message first when the required member is inactive. wait_agent observes only changes after that call starts, never wakes a member, and returns noProgress immediately when no other member can produce a change. Re-list after wakeup or timeout. The Lead must wait for required teammates before giving the final answer.`
 }
 
 const ACTIVE_WAIT_STATUSES: ReadonlySet<TeamMemberView['status']> = new Set(['running', 'provisioning'])
@@ -60,6 +62,8 @@ const MEMBER_VIEW_SCHEMA = {
     provider: { type: 'string' },
     context: { type: 'string', enum: ['fresh', 'fork'] },
     model: { type: 'string' },
+    modelProvider: { type: 'string' },
+    mcpServers: { type: 'array', items: { type: 'string' } },
     diagnostics: { type: 'array', required: true, items: { type: 'string' } },
   },
 } as const
@@ -85,6 +89,12 @@ const TASK_VIEW_SCHEMA = {
     writeScopes: { type: 'array', required: true, items: { type: 'string' } },
     ready: { type: 'boolean', required: true },
     writeScopeWarnings: { type: 'array', required: true, items: { type: 'string' } },
+    provider: { type: 'string' },
+    model: { type: 'string' },
+    reasoningEffort: { type: 'string' },
+    mcpServers: { type: 'array', items: { type: 'string' } },
+    assignedTo: { type: 'string' },
+    staged: { type: 'boolean' },
   },
 } as const
 
@@ -201,6 +211,10 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
           enum: ['fresh', 'fork'],
           description: 'fresh starts without Lead history; fork inherits completed Lead turns. Defaults to fresh.',
         },
+        model_provider: { type: 'string', description: 'Target LLM provider, e.g. anthropic, openai, google, deepseek.' },
+        model: { type: 'string', description: 'Target LLM model, e.g. claude-3-7-sonnet, gemini-2.5-pro, gpt-4o, deepseek-chat.' },
+        reasoning_effort: { type: 'string', enum: ['low', 'medium', 'high'], description: 'Optional reasoning effort level.' },
+        mcp_servers: { type: 'array', items: { type: 'string' }, description: 'Allowed MCP server names for this teammate.' },
       },
       output: jsonOutput(SPAWN_VALUE_SCHEMA),
       async execute(args, exec) {
@@ -212,6 +226,10 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
           prompt: [{ type: 'text', text: args.prompt }],
           context,
           provider: context === 'fork' ? config.forkProvider : config.freshProvider,
+          ...args.model_provider === undefined ? {} : { modelProvider: args.model_provider },
+          ...args.model === undefined ? {} : { model: args.model },
+          ...args.reasoning_effort === undefined ? {} : { reasoningEffort: args.reasoning_effort },
+          ...args.mcp_servers === undefined ? {} : { mcpServers: args.mcp_servers },
           signal: exec.signal,
         })
         return { member: modelMember(result.member) }
@@ -307,6 +325,12 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
           items: { type: 'string' },
           description: 'Advisory workspace-relative file or directory prefixes this task expects to modify.',
         },
+        provider: { type: 'string', description: 'Target LLM provider, e.g. anthropic, openai, google, deepseek.' },
+        model: { type: 'string', description: 'Target LLM model, e.g. claude-3-7-sonnet, gemini-2.5-pro, gpt-4o, deepseek-chat.' },
+        reasoning_effort: { type: 'string', enum: ['low', 'medium', 'high'], description: 'Optional reasoning effort level.' },
+        mcp_servers: { type: 'array', items: { type: 'string' }, description: 'Allowed MCP server names for this task.' },
+        assigned_to: { type: 'string', description: 'Pre-assigned teammate target name for this task.' },
+        staged: { type: 'boolean', description: 'Whether to stage this task first without immediate execution. Set true for plan-first.' },
       },
       output: jsonOutput(TASK_VIEW_SCHEMA),
       async execute(args, exec) {
@@ -315,6 +339,12 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
           description: args.description,
           ...args.blocked_by === undefined ? {} : { blockedBy: args.blocked_by.map(TeamTaskId) },
           ...args.write_scopes === undefined ? {} : { writeScopes: args.write_scopes },
+          ...args.provider === undefined ? {} : { provider: args.provider },
+          ...args.model === undefined ? {} : { model: args.model },
+          ...args.reasoning_effort === undefined ? {} : { reasoningEffort: args.reasoning_effort },
+          ...args.mcp_servers === undefined ? {} : { mcpServers: args.mcp_servers },
+          ...args.assigned_to === undefined ? {} : { assignedTo: args.assigned_to },
+          ...args.staged === undefined ? {} : { staged: args.staged },
         })
       },
     })))
@@ -375,7 +405,7 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
         action: {
           type: 'string',
           required: true,
-          enum: ['claim', 'release', 'edit', 'set_dependencies', 'complete', 'reopen', 'reassign', 'delete'],
+          enum: ['claim', 'release', 'edit', 'set_dependencies', 'complete', 'reopen', 'reassign', 'dispatch', 'delete'],
           description: 'Task transition to apply.',
         },
         subject: { type: 'string', description: 'Replacement title for edit.' },
@@ -383,6 +413,12 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
         blocked_by: { type: 'array', items: { type: 'string' }, description: 'Complete blocker list for set_dependencies.' },
         write_scopes: { type: 'array', items: { type: 'string' }, description: 'Replacement advisory write scopes for edit.' },
         owner: { type: 'string', description: 'Member target from spawn_teammate or list_agents for Lead-only reassign; omit to unassign.' },
+        provider: { type: 'string', description: 'Replacement provider for edit.' },
+        model: { type: 'string', description: 'Replacement model for edit.' },
+        reasoning_effort: { type: 'string', enum: ['low', 'medium', 'high'], description: 'Replacement reasoning effort for edit.' },
+        mcp_servers: { type: 'array', items: { type: 'string' }, description: 'Replacement allowed MCP servers for edit.' },
+        assigned_to: { type: 'string', description: 'Replacement assigned teammate target for edit.' },
+        staged: { type: 'boolean', description: 'Replacement staged state for edit.' },
       },
       output: jsonOutput(TASK_VIEW_SCHEMA),
       async execute(args, exec) {
@@ -395,6 +431,12 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
           ...args.blocked_by === undefined ? {} : { blockedBy: args.blocked_by.map(TeamTaskId) },
           ...args.write_scopes === undefined ? {} : { writeScopes: args.write_scopes },
           ...args.owner === undefined ? {} : { owner: args.owner },
+          ...args.provider === undefined ? {} : { provider: args.provider },
+          ...args.model === undefined ? {} : { model: args.model },
+          ...args.reasoning_effort === undefined ? {} : { reasoningEffort: args.reasoning_effort },
+          ...args.mcp_servers === undefined ? {} : { mcpServers: args.mcp_servers },
+          ...args.assigned_to === undefined ? {} : { assignedTo: args.assigned_to },
+          ...args.staged === undefined ? {} : { staged: args.staged },
         })
       },
     })))

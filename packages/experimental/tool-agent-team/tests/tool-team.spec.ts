@@ -519,18 +519,52 @@ describe('dsh-tool-team', () => {
       description: 'created through tool',
       blocked_by: [],
       write_scopes: ['src/team'],
+      provider: 'mock',
+      model: 'mock-model',
+      reasoning_effort: 'medium',
+      mcp_servers: ['test-mcp'],
+      assigned_to: 'json-worker',
+      staged: true,
     })
-    const task = JSON.parse(text(created)) as { id: string; revision: number }
-    const listed = await execute(ctx, child, 'team_task_list', { ready: true, limit: 1 })
-    expect(JSON.parse(text(listed))).toMatchObject({ tasks: [{ id: task.id, ready: true }] })
-    const read = await execute(ctx, child, 'team_task_get', { task_id: task.id })
-    expect(JSON.parse(text(read))).toMatchObject({ id: task.id, revision: 1 })
-    const claimed = await execute(ctx, child, 'team_task_update', {
+    const task = JSON.parse(text(created)) as { id: string; revision: number; ready: boolean; staged: boolean }
+    expect(task).toMatchObject({
+      subject: 'tool task',
+      provider: 'mock',
+      model: 'mock-model',
+      reasoningEffort: 'medium',
+      mcpServers: ['test-mcp'],
+      assignedTo: 'json-worker',
+      staged: true,
+      ready: false,
+    })
+
+    const blockedClaim = await execute(ctx, child, 'team_task_update', {
       task_id: task.id,
       expected_revision: task.revision,
       action: 'claim',
     })
-    expect(JSON.parse(text(claimed))).toMatchObject({ status: 'in_progress', ownerName: 'json-worker' })
+    expect(blockedClaim.isError).toBe(true)
+    expect(text(blockedClaim)).toContain('staged')
+
+    const dispatched = await execute(ctx, lead, 'team_task_update', {
+      task_id: task.id,
+      expected_revision: task.revision,
+      action: 'dispatch',
+    })
+    const dispatchResult = JSON.parse(text(dispatched)) as { revision: number; ready: boolean }
+    expect(dispatchResult.ready).toBe(true)
+
+    const listed = await execute(ctx, child, 'team_task_list', { ready: true, limit: 1 })
+    expect(JSON.parse(text(listed))).toMatchObject({ tasks: [{ id: task.id, ready: true }] })
+    const read = await execute(ctx, child, 'team_task_get', { task_id: task.id })
+    expect(JSON.parse(text(read))).toMatchObject({ id: task.id, revision: 2 })
+    const claimed = await execute(ctx, child, 'team_task_update', {
+      task_id: task.id,
+      expected_revision: dispatchResult.revision,
+      action: 'claim',
+    })
+    const claimResult = JSON.parse(text(claimed)) as { revision: number; status: string; ownerName: string }
+    expect(claimResult).toMatchObject({ status: 'in_progress', ownerName: 'json-worker' })
     const stale = await execute(ctx, lead, 'team_task_update', {
       task_id: task.id,
       expected_revision: task.revision,
@@ -544,7 +578,7 @@ describe('dsh-tool-team', () => {
       setTimeout(() => {
         void execute(ctx, child, 'team_task_update', {
           task_id: task.id,
-          expected_revision: 2,
+          expected_revision: claimResult.revision,
           action: 'complete',
         }).then(resolve, reject)
       }, 0)

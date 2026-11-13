@@ -1,6 +1,7 @@
 ---
 name: dsh-find-simplifications
 description: Find evidence-backed simplifications in DeepSeek Harness code, APIs, configuration, tests, and prose; write or consolidate proposals, identify small inline cleanups, or assess simplifications from another branch. Use for removing dead, duplicated, speculative, or unnecessarily maintained behavior and infrastructure.
+disable-model-invocation: true
 ---
 
 # Finding DeepSeek Harness Simplifications

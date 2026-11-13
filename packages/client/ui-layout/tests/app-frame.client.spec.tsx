@@ -216,6 +216,13 @@ describe('AppFrame', () => {
     expect(slotCalls.find(c => c.key === 'main')).toEqual({ key: 'main', props: {}, options: { entryKey: 'conversation' } })
   })
 
+  it('publishes --dsh-rightbar-col-width on frame style for panel-specific layout overrides', () => {
+    const { frame, instance } = mountFrame()
+    expect(frame.style.getPropertyValue('--dsh-rightbar-col-width')).toBe('0px')
+    act(() => { instance.actions.openRightbar(true, false) })
+    expect(frame.style.getPropertyValue('--dsh-rightbar-col-width')).toBe('864px')
+  })
+
   it('renders the column and bottom outlets without a current Session', () => {
     selectedSession = undefined
     const { frame, getByTestId } = mountFrame()

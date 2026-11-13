@@ -15,6 +15,7 @@
     { "path": "../../client/ui-primitives" },
     { "path": "../../client/ui-renderer" },
     { "path": "../../client/ui-session" },
+    { "path": "../../client/ui-sidebar-right" },
     { "path": "../../client/ui-slots" },
     { "path": "../../client/ui-workspace" },
     { "path": "../../core/agent" },

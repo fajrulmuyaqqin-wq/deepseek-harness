@@ -15,7 +15,7 @@
  * shares — zero cordis or framework imports, zero self-made hooks.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import type {
   HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
@@ -45,7 +45,7 @@ function CenterColumn(props: { children?: ReactNode; inert: boolean }) {
 /** Subscribe to the main key without subscribing the column frame to each panel id. */
 function MainPanel({ usePanelInfo, renderSlot }: Pick<PropsRuntime<'root'>, 'usePanelInfo'> & PropsRenderSlots<'main'>) {
   const panelId = usePanelInfo(info => info.activePanelId)
-  return <div className={css.mainPanel} data-global-panel={panelId !== null || undefined}>
+  return <div className={css.mainPanel} data-global-panel={panelId !== null || undefined} data-panel={panelId || undefined}>
     {renderSlot('main', {}, { entryKey: panelId ?? 'conversation' })}
   </div>
 }
@@ -292,9 +292,10 @@ export function AppFrame({
       style={{
         ...(windowsTitlebar
           ? { '--dsh-windows-sidebar-width': `${cols.sidebar}px` } : {}),
+        '--dsh-rightbar-col-width': `${rightbarMax}px`,
         gridTemplateColumns:
           `${cols.sidebar}px minmax(${cols.rightbar === 0 ? 0 : CENTER_MIN}px, 1fr) minmax(0px, ${rightbarMax}px)`,
-      }}
+      } as CSSProperties}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-sidebar-drawer={drawer || undefined}
       data-sidebar-instant={drawer && sidebarCollapsed && sidebarTransition.instant || undefined}

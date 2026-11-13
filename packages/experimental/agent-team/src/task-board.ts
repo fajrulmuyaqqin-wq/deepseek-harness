@@ -61,6 +61,12 @@ export class TeamTaskBoard {
         status: 'pending',
         blockedBy: this.dependencies(request.blockedBy ?? [], state),
         writeScopes: this.writeScopes(request.writeScopes ?? []),
+        ...request.provider === undefined ? {} : { provider: requiredText(request.provider, 'provider', 64) },
+        ...request.model === undefined ? {} : { model: requiredText(request.model, 'model', 128) },
+        ...request.reasoningEffort === undefined ? {} : { reasoningEffort: requiredText(request.reasoningEffort, 'reasoningEffort', 32) },
+        ...request.mcpServers === undefined ? {} : { mcpServers: [...new Set(request.mcpServers.map(s => requiredText(s, 'mcpServers', 64)))] },
+        ...request.assignedTo === undefined ? {} : { assignedTo: requiredText(request.assignedTo, 'assignedTo', 64) },
+        ...request.staged === undefined ? {} : { staged: request.staged },
       }
       this.assertTaskGraph(state, task)
       await this.journal.appendAndFlush(root, 'team/task', { version: 2, teamId: TeamId(root.id), task })
@@ -130,10 +136,18 @@ export class TeamTaskBoard {
           if (current.ownerId !== undefined && current.ownerId !== caller.id) {
             throw new TeamError(`team task "${current.id}" is owned by another member`, 'TEAM_TASK_ALREADY_CLAIMED')
           }
+          if (current.staged) {
+            throw new TeamError(`team task "${current.id}" is staged; dispatch it first`, 'TEAM_TASK_BLOCKED')
+          }
           if (current.status !== 'pending' || !taskReady(state, current)) {
             throw new TeamError(`team task "${current.id}" is not ready to claim`, 'TEAM_TASK_BLOCKED')
           }
           next = { ...current, status: 'in_progress', ownerId: caller.id }
+          break
+        case 'dispatch':
+          authorizeOwner()
+          if (current.status !== 'pending') throw new TeamError('only a pending task can be dispatched', 'TEAM_TASK_INVALID_TRANSITION')
+          next = { ...current, staged: false }
           break
         case 'release':
           authorizeOwner()
@@ -142,8 +156,18 @@ export class TeamTaskBoard {
           break
         case 'edit':
           authorizeOwner()
-          if (request.subject === undefined && request.description === undefined && request.writeScopes === undefined) {
-            throw new TeamError('task edit requires subject, description, or write_scopes', 'TEAM_INVALID_ARGUMENT')
+          if (
+            request.subject === undefined
+            && request.description === undefined
+            && request.writeScopes === undefined
+            && request.provider === undefined
+            && request.model === undefined
+            && request.reasoningEffort === undefined
+            && request.mcpServers === undefined
+            && request.assignedTo === undefined
+            && request.staged === undefined
+          ) {
+            throw new TeamError('task edit requires at least one editable field', 'TEAM_INVALID_ARGUMENT')
           }
           next = {
             ...current,
@@ -152,6 +176,12 @@ export class TeamTaskBoard {
               ? {}
               : { description: requiredText(request.description, 'description', 16_384) },
             ...request.writeScopes === undefined ? {} : { writeScopes: this.writeScopes(request.writeScopes) },
+            ...request.provider === undefined ? {} : { provider: requiredText(request.provider, 'provider', 64) },
+            ...request.model === undefined ? {} : { model: requiredText(request.model, 'model', 128) },
+            ...request.reasoningEffort === undefined ? {} : { reasoningEffort: requiredText(request.reasoningEffort, 'reasoningEffort', 32) },
+            ...request.mcpServers === undefined ? {} : { mcpServers: [...new Set(request.mcpServers.map(s => requiredText(s, 'mcpServers', 64)))] },
+            ...request.assignedTo === undefined ? {} : { assignedTo: requiredText(request.assignedTo, 'assignedTo', 64) },
+            ...request.staged === undefined ? {} : { staged: request.staged },
           }
           break
         case 'set_dependencies':

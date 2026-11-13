@@ -56,7 +56,13 @@ export function projectTaskView(state: TeamState, task: TeamTaskSnapshot): TeamT
     blockedBy: [...task.blockedBy],
     writeScopes: [...task.writeScopes],
     ...ownerName === undefined ? {} : { ownerName },
-    ready: task.status === 'pending' && taskReady(state, task),
+    ready: task.status === 'pending' && !task.staged && taskReady(state, task),
     writeScopeWarnings: [...warnings],
+    ...task.provider === undefined ? {} : { provider: task.provider },
+    ...task.model === undefined ? {} : { model: task.model },
+    ...task.reasoningEffort === undefined ? {} : { reasoningEffort: task.reasoningEffort },
+    ...task.mcpServers === undefined ? {} : { mcpServers: [...task.mcpServers] },
+    ...task.assignedTo === undefined ? {} : { assignedTo: task.assignedTo },
+    ...task.staged === undefined ? {} : { staged: task.staged },
   }
 }
