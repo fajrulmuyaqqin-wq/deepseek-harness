@@ -47,6 +47,7 @@ worktrees/
 .agents/worktrees/
 .typert-*/
 native/system/test/bin/
+packages/subagent/subagent-codex/bin/
 *.db
 gateway.db
 
